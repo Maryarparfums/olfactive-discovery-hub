@@ -5,6 +5,7 @@ import {
   perfumes,
   estacoes,
   periodos,
+  type Perfume,
 } from "@/data/perfumes";
 import { ScoreBar } from "@/components/score-bar";
 import { ProductCard } from "@/components/product-card";
