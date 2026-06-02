@@ -65,10 +65,10 @@ export const Route = createFileRoute("/perfume/$slug")({
 });
 
 function PerfumePage() {
-  const perfume = Route.useLoaderData();
-  const similares = perfume.similares
-    .map((s) => perfumes.find((p) => p.slug === s))
-    .filter((p): p is NonNullable<typeof p> => Boolean(p));
+  const perfume = Route.useLoaderData() as Perfume;
+  const similares: Perfume[] = perfume.similares
+    .map((s: string) => perfumes.find((p) => p.slug === s))
+    .filter((p): p is Perfume => Boolean(p));
 
   return (
     <article>
