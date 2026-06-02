@@ -250,7 +250,7 @@ function PerfumePage() {
             </Link>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
-            {similares.map((s) => (
+            {similares.map((s: Perfume) => (
               <ProductCard key={s.slug} perfume={s} />
             ))}
           </div>
