@@ -1,564 +1,811 @@
-# Maryar — Guia de Integração de APIs e InfinitePay
 
-Documento de referência técnica para evolução do projeto Maryar (frontend
-TanStack Start já entregue na Fase 1) em direção a um e-commerce completo
-com backend, autenticação, checkout e integração de pagamentos via
-**InfinitePay** (PIX e Cartão de Crédito).
+# Maryar — Guia de Integração de APIs (ASP Clássico + ASP.NET 4.5.2) e InfinitePay
 
-> **Status atual do projeto:** apenas frontend (mocks em `src/data/perfumes.ts`).
-> Este documento descreve o caminho recomendado para habilitar backend, APIs
-> internas e o fluxo de pagamento real.
+Documento de referência técnica para o backend do Maryar. O **frontend**
+(TanStack Start + React 19) entregue na Fase 1 é apenas a camada de
+apresentação e consome **APIs REST hospedadas em IIS**.
 
----
+Stack alvo definida com o cliente:
 
-## 1. Arquitetura recomendada
+| Camada              | Tecnologia                                                       |
+| ------------------- | ---------------------------------------------------------------- |
+| Frontend            | TanStack Start v1 + React 19 (Lovable)                           |
+| Backend principal   | **ASP.NET Framework 4.5.2 + Web API 2 (C#)** — APIs JSON         |
+| Backend legado/auxiliar | **ASP Clássico (VBScript)** — páginas utilitárias e endpoints simples |
+| Acesso a dados      | **ADO.NET puro** (`MySqlConnection` + `MySqlCommand`)            |
+| Banco               | **MySQL 8** (InnoDB, utf8mb4)                                    |
+| Hospedagem          | IIS 8.5+ (Windows Server)                                        |
+| Pagamentos          | InfinitePay (PIX + Cartão de Crédito) via API REST              |
 
-```
-┌──────────────────────────────┐
-│  Browser (React 19 + TSR)   │
-│  - Vitrine / Catálogo / PDP │
-│  - Checkout multi-step      │
-└──────────────┬──────────────┘
-               │  fetch / useServerFn
-               ▼
-┌──────────────────────────────┐
-│  TanStack Start (Worker)    │
-│  - createServerFn (RPC)     │
-│  - /api/public/* (webhooks) │
-└──────────────┬──────────────┘
-               │
-        ┌──────┴──────┐
-        ▼             ▼
-┌────────────┐  ┌──────────────────────┐
-│ Lovable    │  │ InfinitePay API REST │
-│ Cloud (DB) │  │ - charges (cartão)   │
-│ Postgres   │  │ - pix                │
-│ + Auth     │  │ - webhooks           │
-└────────────┘  └──────────────────────┘
-```
-
-Componentes do stack atual e o que precisa ser adicionado:
-
-| Camada            | Tecnologia                             | Status      |
-| ----------------- | -------------------------------------- | ----------- |
-| Frontend          | TanStack Start v1 + React 19           | Implementado|
-| Routing/SSR       | TanStack Router (file-based)           | Implementado|
-| Estilo            | Tailwind v4 + tokens em `styles.css`   | Implementado|
-| Dados de produto  | Mock em `src/data/perfumes.ts`         | Mock        |
-| Backend / DB      | Lovable Cloud (Postgres + Auth)        | **A ativar**|
-| RPC servidor      | `createServerFn`                       | A criar     |
-| Endpoints públicos| Server routes em `src/routes/api/public/*` | A criar  |
-| Pagamentos        | InfinitePay (PIX + Cartão)             | A integrar  |
+> Importante: **Lovable Cloud / Supabase / `createServerFn` / `supabaseAdmin` NÃO se aplicam aqui.**
+> O Lovable cuida apenas do frontend; toda a lógica de negócio, persistência
+> e integração com InfinitePay vive no seu servidor IIS.
 
 ---
 
-## 2. Modelagem de dados (Lovable Cloud / Postgres)
+## 1. Arquitetura
 
-Equivalente moderno ao MySQL originalmente solicitado. Use migrations
-Postgres (Lovable Cloud as gerencia). Todas as tabelas em `public` precisam
-de `GRANT` e RLS.
+```
+┌──────────────────────────────────────────┐
+│ Browser (React 19 + TanStack Start)      │
+│ Vitrine • Catálogo • PDP • Checkout      │
+└───────────────┬──────────────────────────┘
+                │ HTTPS + CORS (fetch)
+                ▼
+┌──────────────────────────────────────────┐
+│ IIS  —  https://api.maryar.com.br        │
+│ ┌──────────────────────────────────────┐ │
+│ │ ASP.NET 4.5.2 Web API 2 (C#)         │ │
+│ │  /api/products, /api/cart,           │ │
+│ │  /api/orders, /api/payments,         │ │
+│ │  /api/webhooks/infinitepay           │ │
+│ └──────────────────────────────────────┘ │
+│ ┌──────────────────────────────────────┐ │
+│ │ ASP Clássico (.asp)                  │ │
+│ │  páginas auxiliares / endpoints      │ │
+│ │  simples / relatórios legados        │ │
+│ └──────────────────────────────────────┘ │
+└──────┬───────────────────┬───────────────┘
+       │                   │
+       ▼                   ▼
+┌──────────────┐   ┌──────────────────────┐
+│  MySQL 8     │   │ InfinitePay API REST │
+│  (ADO.NET)   │   │  charges (PIX/cartão)│
+└──────────────┘   └──────────────────────┘
+```
 
-### 2.1 Tabelas principais
+Divisão recomendada entre ASP Clássico e ASP.NET:
+
+| Função                                       | Stack recomendada      |
+| -------------------------------------------- | ---------------------- |
+| Catálogo, carrinho, pedidos, pagamentos, webhook InfinitePay | **ASP.NET 4.5.2 (Web API 2)** — JSON, HMAC, HttpClient, async |
+| Páginas de relatório interno, exportações CSV, áreas administrativas legadas | **ASP Clássico** — quando já existir base ou para evitar deploy completo |
+| Endpoints públicos críticos (pagamento, autenticação) | **Nunca** em ASP Clássico — sem suporte nativo a JSON, HMAC time-safe, TLS moderno controlado |
+
+> ASP Clássico fica como **complemento**; o caminho de pagamento permanece
+> 100% em ASP.NET por questão de segurança (HMAC, comparação time-safe,
+> TLS 1.2+, `HttpClient` com timeouts).
+
+---
+
+## 2. Banco de dados MySQL
+
+Charset `utf8mb4`, engine `InnoDB`, timestamps UTC.
 
 ```sql
--- Marcas
-create table public.brands (
-  id          uuid primary key default gen_random_uuid(),
-  slug        text unique not null,
-  nome        text not null,
-  descricao   text,
-  created_at  timestamptz default now()
-);
+CREATE DATABASE maryar
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
--- Famílias olfativas (enum-like, mas como tabela para flexibilidade)
-create table public.fragrance_families (
-  slug  text primary key,         -- 'amadeirado', 'floral-branco', ...
-  nome  text not null
-);
+USE maryar;
 
--- Produtos (perfumes, skincare, makeup) — começamos por perfumes
-create table public.products (
-  id              uuid primary key default gen_random_uuid(),
-  slug            text unique not null,
-  brand_id        uuid references public.brands(id),
-  categoria       text not null,           -- 'perfume' | 'skincare' | 'makeup'
-  nome            text not null,
-  descricao       text,
-  preco_centavos  integer not null check (preco_centavos > 0),
-  estoque         integer not null default 0,
-  imagem_url      text,
-  ativo           boolean not null default true,
-  created_at      timestamptz default now(),
-  updated_at      timestamptz default now()
-);
+CREATE TABLE brands (
+  id           CHAR(36)     NOT NULL PRIMARY KEY,
+  slug         VARCHAR(120) NOT NULL UNIQUE,
+  nome         VARCHAR(160) NOT NULL,
+  descricao    TEXT NULL,
+  created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
 
--- Detalhes olfativos (1-to-1 com products quando categoria='perfume')
-create table public.perfume_details (
-  product_id        uuid primary key references public.products(id) on delete cascade,
-  familia_slug      text references public.fragrance_families(slug),
-  concentracao      text,                  -- 'EDP', 'EDT', 'Extrait'
-  volume_ml         integer,
-  notas_topo        text[] default '{}',
-  notas_coracao     text[] default '{}',
-  notas_base        text[] default '{}',
-  fixacao           smallint check (fixacao between 0 and 10),
-  projecao          smallint check (projecao between 0 and 10),
-  duracao_horas     text,
-  estacao_scores    jsonb,                 -- { primavera: 8, verao: 6, ... }
-  periodo_scores    jsonb,                 -- { dia: 7, noite: 9 }
-  ocasiao_scores    jsonb
-);
+CREATE TABLE fragrance_families (
+  slug VARCHAR(60)  NOT NULL PRIMARY KEY,
+  nome VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
 
--- Carrinho (persistido por usuário OU por session_token anônimo)
-create table public.carts (
-  id            uuid primary key default gen_random_uuid(),
-  user_id       uuid references auth.users(id) on delete cascade,
-  session_token text,                       -- para guests
-  created_at    timestamptz default now(),
-  updated_at    timestamptz default now()
-);
+CREATE TABLE products (
+  id              CHAR(36)     NOT NULL PRIMARY KEY,
+  slug            VARCHAR(160) NOT NULL UNIQUE,
+  brand_id        CHAR(36)     NULL,
+  categoria       VARCHAR(30)  NOT NULL,            -- perfume|skincare|makeup
+  nome            VARCHAR(200) NOT NULL,
+  descricao       TEXT         NULL,
+  preco_centavos  INT          NOT NULL,
+  estoque         INT          NOT NULL DEFAULT 0,
+  imagem_url      VARCHAR(500) NULL,
+  ativo           TINYINT(1)   NOT NULL DEFAULT 1,
+  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_products_brand FOREIGN KEY (brand_id) REFERENCES brands(id),
+  INDEX ix_products_categoria (categoria),
+  INDEX ix_products_ativo     (ativo)
+) ENGINE=InnoDB;
 
-create table public.cart_items (
-  id                uuid primary key default gen_random_uuid(),
-  cart_id           uuid not null references public.carts(id) on delete cascade,
-  product_id        uuid not null references public.products(id),
-  quantidade        integer not null check (quantidade > 0),
-  preco_centavos    integer not null,       -- snapshot do preço
-  unique (cart_id, product_id)
-);
+CREATE TABLE perfume_details (
+  product_id     CHAR(36)    NOT NULL PRIMARY KEY,
+  familia_slug   VARCHAR(60) NULL,
+  concentracao   VARCHAR(20) NULL,                  -- EDP|EDT|Extrait
+  volume_ml      SMALLINT    NULL,
+  notas_topo     JSON        NULL,                  -- ["bergamota","limão"]
+  notas_coracao  JSON        NULL,
+  notas_base     JSON        NULL,
+  fixacao        TINYINT     NULL,                  -- 0..10
+  projecao       TINYINT     NULL,
+  duracao_horas  VARCHAR(20) NULL,
+  estacao_scores JSON        NULL,                  -- {primavera:8,...}
+  periodo_scores JSON        NULL,
+  ocasiao_scores JSON        NULL,
+  CONSTRAINT fk_perfdet_product
+     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+  CONSTRAINT fk_perfdet_familia
+     FOREIGN KEY (familia_slug) REFERENCES fragrance_families(slug)
+) ENGINE=InnoDB;
 
--- Pedidos
-create type public.order_status as enum (
-  'pending', 'awaiting_payment', 'paid', 'shipped', 'delivered',
-  'cancelled', 'refunded', 'failed'
-);
+CREATE TABLE customers (
+  id            CHAR(36)     NOT NULL PRIMARY KEY,
+  email         VARCHAR(180) NOT NULL UNIQUE,
+  nome          VARCHAR(160) NOT NULL,
+  senha_hash    VARCHAR(255) NULL,                  -- bcrypt/PBKDF2
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
 
-create table public.orders (
-  id                  uuid primary key default gen_random_uuid(),
-  user_id             uuid references auth.users(id),
-  email               text not null,
-  status              public.order_status not null default 'pending',
-  total_centavos      integer not null,
-  endereco_entrega    jsonb not null,
-  metodo_pagamento    text not null,        -- 'pix' | 'credit_card'
-  infinitepay_charge_id text,
-  pix_qrcode          text,
-  pix_copia_e_cola    text,
-  created_at          timestamptz default now(),
-  updated_at          timestamptz default now()
-);
+CREATE TABLE carts (
+  id            CHAR(36)     NOT NULL PRIMARY KEY,
+  customer_id   CHAR(36)     NULL,
+  session_token VARCHAR(80)  NULL,                  -- guests
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+                              ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_carts_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  INDEX ix_carts_session (session_token)
+) ENGINE=InnoDB;
 
-create table public.order_items (
-  id              uuid primary key default gen_random_uuid(),
-  order_id        uuid not null references public.orders(id) on delete cascade,
-  product_id      uuid not null references public.products(id),
-  nome            text not null,
-  preco_centavos  integer not null,
-  quantidade      integer not null
-);
+CREATE TABLE cart_items (
+  id              CHAR(36) NOT NULL PRIMARY KEY,
+  cart_id         CHAR(36) NOT NULL,
+  product_id      CHAR(36) NOT NULL,
+  quantidade      INT      NOT NULL,
+  preco_centavos  INT      NOT NULL,                -- snapshot
+  CONSTRAINT fk_cartitems_cart    FOREIGN KEY (cart_id) REFERENCES carts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cartitems_product FOREIGN KEY (product_id) REFERENCES products(id),
+  UNIQUE KEY uk_cart_product (cart_id, product_id)
+) ENGINE=InnoDB;
 
--- Log de webhooks (auditoria + idempotência)
-create table public.payment_events (
-  id              uuid primary key default gen_random_uuid(),
-  order_id        uuid references public.orders(id),
-  provider        text not null,            -- 'infinitepay'
-  event_id        text unique,              -- id do evento do provider
-  event_type      text not null,
-  payload         jsonb not null,
-  received_at     timestamptz default now()
-);
+CREATE TABLE orders (
+  id                     CHAR(36)     NOT NULL PRIMARY KEY,
+  customer_id            CHAR(36)     NULL,
+  email                  VARCHAR(180) NOT NULL,
+  status                 VARCHAR(30)  NOT NULL DEFAULT 'pending',
+  total_centavos         INT          NOT NULL,
+  endereco_entrega_json  JSON         NOT NULL,
+  metodo_pagamento       VARCHAR(20)  NOT NULL,     -- pix|credit_card
+  infinitepay_charge_id  VARCHAR(120) NULL,
+  pix_qrcode             MEDIUMTEXT   NULL,         -- base64
+  pix_copia_e_cola       TEXT         NULL,
+  created_at             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                       ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  INDEX ix_orders_status (status),
+  INDEX ix_orders_charge (infinitepay_charge_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE order_items (
+  id              CHAR(36)     NOT NULL PRIMARY KEY,
+  order_id        CHAR(36)     NOT NULL,
+  product_id      CHAR(36)     NOT NULL,
+  nome            VARCHAR(200) NOT NULL,
+  preco_centavos  INT          NOT NULL,
+  quantidade      INT          NOT NULL,
+  CONSTRAINT fk_oitems_order   FOREIGN KEY (order_id)   REFERENCES orders(id) ON DELETE CASCADE,
+  CONSTRAINT fk_oitems_product FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE payment_events (
+  id           CHAR(36)     NOT NULL PRIMARY KEY,
+  order_id     CHAR(36)     NULL,
+  provider     VARCHAR(40)  NOT NULL,               -- infinitepay
+  event_id     VARCHAR(120) NOT NULL UNIQUE,        -- idempotência
+  event_type   VARCHAR(80)  NOT NULL,
+  payload      JSON         NOT NULL,
+  received_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pevents_order FOREIGN KEY (order_id) REFERENCES orders(id)
+) ENGINE=InnoDB;
 ```
 
-### 2.2 GRANTs e RLS (obrigatório)
-
-```sql
--- Catálogo: leitura pública
-grant select on public.brands, public.fragrance_families,
-  public.products, public.perfume_details to anon, authenticated;
-grant all on public.brands, public.fragrance_families,
-  public.products, public.perfume_details to service_role;
-
-alter table public.products enable row level security;
-create policy "produtos ativos visíveis" on public.products
-  for select to anon, authenticated using (ativo = true);
-
--- Carrinho: só dono ou dono do session_token
-grant select, insert, update, delete on public.carts, public.cart_items to authenticated;
-grant all on public.carts, public.cart_items to service_role;
-
-alter table public.carts enable row level security;
-create policy "meu carrinho" on public.carts
-  for all to authenticated using (user_id = auth.uid());
-
--- Orders: usuário só vê os próprios
-grant select, insert on public.orders, public.order_items to authenticated;
-grant all on public.orders, public.order_items to service_role;
-
-alter table public.orders enable row level security;
-create policy "meus pedidos" on public.orders
-  for select to authenticated using (user_id = auth.uid());
-
--- payment_events: apenas service_role (servidor)
-grant all on public.payment_events to service_role;
-alter table public.payment_events enable row level security;
-```
-
-### 2.3 Papéis (admin)
-
-Siga o padrão obrigatório do Lovable (tabela separada `user_roles` +
-função `has_role` security definer). **Nunca** armazene `is_admin` em
-`profiles`.
+Status do pedido (string controlada na aplicação):
+`pending → awaiting_payment → paid → shipped → delivered`
+estados terminais alternativos: `failed`, `cancelled`, `refunded`.
 
 ---
 
-## 3. APIs internas (createServerFn)
+## 3. Estrutura do projeto ASP.NET 4.5.2
 
-Use `createServerFn` para tudo que é consumido pelo próprio frontend.
-
-Convenções:
-- Arquivos em `src/lib/<dominio>.functions.ts` (cliente-safe).
-- Helpers com lógica privada em `src/lib/<dominio>.server.ts`.
-- Validar **toda** entrada com Zod.
-- Retornar DTOs serializáveis (sem instâncias de classe).
-
-### 3.1 Catálogo
-
-```ts
-// src/lib/catalog.functions.ts
-import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
-import { listProducts, getProductBySlug } from "./catalog.server";
-
-export const listProductsFn = createServerFn({ method: "GET" })
-  .inputValidator(z.object({
-    familia: z.string().optional(),
-    estacao: z.enum(["primavera","verao","outono","inverno"]).optional(),
-    page: z.number().int().min(1).default(1),
-    pageSize: z.number().int().min(1).max(48).default(24),
-  }))
-  .handler(async ({ data }) => listProducts(data));
-
-export const getProductFn = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ slug: z.string().min(1).max(120) }))
-  .handler(async ({ data }) => getProductBySlug(data.slug));
+```
+Maryar.Api/
+├── Maryar.Api.csproj
+├── Web.config
+├── packages.config
+├── Global.asax / Global.asax.cs
+├── App_Start/
+│   ├── WebApiConfig.cs
+│   ├── CorsConfig.cs
+│   └── FilterConfig.cs
+├── Controllers/
+│   ├── ProductsController.cs
+│   ├── CartController.cs
+│   ├── OrdersController.cs
+│   ├── PaymentsController.cs
+│   └── WebhooksController.cs
+├── Models/
+│   ├── Dtos/ (ProductDto, CartDto, OrderDto, ...)
+│   └── Entities/ (Product, Order, ...)
+├── Data/
+│   ├── Db.cs                  // helper de conexão MySql
+│   ├── ProductRepository.cs
+│   ├── CartRepository.cs
+│   └── OrderRepository.cs
+├── Services/
+│   ├── InfinitePayClient.cs
+│   ├── PricingService.cs
+│   └── WebhookVerifier.cs
+└── Infrastructure/
+    ├── JsonFormatterConfig.cs
+    └── ErrorHandler.cs
 ```
 
-### 3.2 Carrinho
+### 3.1 Pacotes NuGet obrigatórios
 
-| Função              | Método | Descrição                              |
-| ------------------- | ------ | -------------------------------------- |
-| `getCart`           | GET    | Retorna carrinho atual                 |
-| `addCartItem`       | POST   | Adiciona item                          |
-| `updateCartItem`    | POST   | Atualiza quantidade                    |
-| `removeCartItem`    | POST   | Remove item                            |
-| `clearCart`         | POST   | Esvazia                                |
+```
+Microsoft.AspNet.WebApi              5.2.x
+Microsoft.AspNet.WebApi.Cors         5.2.x
+Microsoft.AspNet.WebApi.WebHost      5.2.x
+Newtonsoft.Json                      13.x
+MySql.Data                           8.x          (driver oficial Oracle)
+Microsoft.Owin.Host.SystemWeb        4.x          (se usar JWT/OWIN)
+Microsoft.Owin.Security.Jwt          4.x          (auth opcional)
+```
 
-### 3.3 Checkout
+### 3.2 `Web.config` (trechos essenciais)
 
-| Função                  | Método | Descrição                                                |
-| ----------------------- | ------ | -------------------------------------------------------- |
-| `createOrderFn`         | POST   | Cria order `pending` com snapshot do carrinho            |
-| `createPixChargeFn`     | POST   | Chama InfinitePay PIX, retorna `qr_code` + `copia_cola`  |
-| `createCardChargeFn`    | POST   | Chama InfinitePay Cartão (token gerado no browser)       |
-| `getOrderStatusFn`      | GET    | Polling de status (PIX)                                  |
+```xml
+<configuration>
+  <appSettings>
+    <add key="MySqlConnectionString"
+         value="Server=localhost;Port=3306;Database=maryar;
+                Uid=maryar_app;Pwd=__SET_IN_DEPLOY__;
+                SslMode=Required;DefaultCommandTimeout=30;" />
+    <add key="InfinitePay:BaseUrl"      value="https://api.infinitepay.io" />
+    <add key="InfinitePay:ApiKey"       value="__SET_IN_DEPLOY__" />
+    <add key="InfinitePay:WebhookSecret" value="__SET_IN_DEPLOY__" />
+    <add key="Cors:AllowedOrigins"
+         value="https://www.maryar.com.br,https://maryar.com.br" />
+  </appSettings>
+
+  <system.web>
+    <compilation debug="false" targetFramework="4.5.2" />
+    <httpRuntime targetFramework="4.5.2" enableVersionHeader="false" />
+    <customErrors mode="RemoteOnly" />
+  </system.web>
+
+  <system.webServer>
+    <security>
+      <requestFiltering>
+        <requestLimits maxAllowedContentLength="2097152" /> <!-- 2 MB -->
+      </requestFiltering>
+    </security>
+    <httpProtocol>
+      <customHeaders>
+        <remove name="X-Powered-By" />
+        <add name="Strict-Transport-Security"
+             value="max-age=31536000; includeSubDomains" />
+      </customHeaders>
+    </httpProtocol>
+  </system.webServer>
+</configuration>
+```
+
+> Em produção, mantenha segredos fora do `Web.config`. Use **arquivos
+> `.config` externos** (`configSource="secrets.config"`) ou **DPAPI**
+> (`aspnet_regiis -pe "appSettings"`). Nunca commitar valores reais.
+
+### 3.3 Bootstrap do TLS
+
+ASP.NET 4.5.2 **não habilita TLS 1.2 por padrão**. No `Global.asax.cs`:
+
+```csharp
+protected void Application_Start()
+{
+    ServicePointManager.SecurityProtocol =
+        SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11;
+    GlobalConfiguration.Configure(WebApiConfig.Register);
+}
+```
+
+### 3.4 CORS
+
+```csharp
+// App_Start/WebApiConfig.cs
+public static class WebApiConfig
+{
+    public static void Register(HttpConfiguration config)
+    {
+        var origins = ConfigurationManager.AppSettings["Cors:AllowedOrigins"];
+        var cors = new EnableCorsAttribute(origins, "*", "GET,POST,PUT,DELETE,OPTIONS")
+        {
+            SupportsCredentials = false
+        };
+        config.EnableCors(cors);
+
+        config.MapHttpAttributeRoutes();
+        config.Routes.MapHttpRoute(
+            name: "DefaultApi",
+            routeTemplate: "api/{controller}/{id}",
+            defaults: new { id = RouteParameter.Optional });
+
+        // JSON em camelCase + ignora nulls
+        var json = config.Formatters.JsonFormatter;
+        json.SerializerSettings.ContractResolver =
+            new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver();
+        json.SerializerSettings.NullValueHandling =
+            Newtonsoft.Json.NullValueHandling.Ignore;
+    }
+}
+```
 
 ---
 
-## 4. Integração InfinitePay
+## 4. Acesso a MySQL com ADO.NET puro
 
-> InfinitePay (CloudWalk) expõe uma API REST para charges (cartão de
-> crédito) e PIX. Confira sempre os endpoints e payloads atuais em
-> <https://developers.infinitepay.io>. Este guia descreve o **shape** da
-> integração; ajuste os paths/campos conforme a versão vigente da API.
+Helper único para abrir conexão e parametrizar comandos.
 
-### 4.1 Credenciais (Secrets)
+```csharp
+// Data/Db.cs
+using MySql.Data.MySqlClient;
+using System.Configuration;
 
-Adicione via ferramenta de Secrets do Lovable (nunca no código):
+public static class Db
+{
+    public static string ConnectionString =>
+        ConfigurationManager.AppSettings["MySqlConnectionString"];
 
-| Secret                       | Onde usar                       |
-| ---------------------------- | ------------------------------- |
-| `INFINITEPAY_API_KEY`        | Authorization bearer do servidor|
-| `INFINITEPAY_WEBHOOK_SECRET` | Validar assinatura de webhook   |
-| `INFINITEPAY_HANDLE`         | Identificador da conta (se aplicável) |
+    public static MySqlConnection Open()
+    {
+        var cn = new MySqlConnection(ConnectionString);
+        cn.Open();
+        return cn;
+    }
+}
+```
 
-Ambiente: use credenciais de **sandbox** durante desenvolvimento e troque
-para produção apenas quando o fluxo end-to-end estiver validado.
+Repositório com **parâmetros nomeados** (jamais concatenar SQL):
 
-### 4.2 Cliente HTTP do servidor
+```csharp
+// Data/ProductRepository.cs
+public class ProductRepository
+{
+    public ProductDto GetBySlug(string slug)
+    {
+        const string sql = @"
+            SELECT p.id, p.slug, p.nome, p.descricao, p.preco_centavos,
+                   p.imagem_url, p.estoque,
+                   pd.familia_slug, pd.concentracao, pd.volume_ml,
+                   pd.notas_topo, pd.notas_coracao, pd.notas_base,
+                   pd.fixacao, pd.projecao, pd.duracao_horas
+            FROM products p
+            LEFT JOIN perfume_details pd ON pd.product_id = p.id
+            WHERE p.slug = @slug AND p.ativo = 1
+            LIMIT 1;";
+
+        using (var cn = Db.Open())
+        using (var cmd = new MySqlCommand(sql, cn))
+        {
+            cmd.Parameters.AddWithValue("@slug", slug);
+            using (var r = cmd.ExecuteReader())
+            {
+                if (!r.Read()) return null;
+                return new ProductDto
+                {
+                    Id            = r.GetString("id"),
+                    Slug          = r.GetString("slug"),
+                    Nome          = r.GetString("nome"),
+                    Descricao     = r.IsDBNull(r.GetOrdinal("descricao")) ? null : r.GetString("descricao"),
+                    PrecoCentavos = r.GetInt32("preco_centavos"),
+                    ImagemUrl     = r.IsDBNull(r.GetOrdinal("imagem_url")) ? null : r.GetString("imagem_url"),
+                    Estoque       = r.GetInt32("estoque"),
+                    Olfativo      = MapOlfativo(r)
+                };
+            }
+        }
+    }
+}
+```
+
+Transações para operações que mexem em várias tabelas (criação de pedido):
+
+```csharp
+using (var cn = Db.Open())
+using (var tx = cn.BeginTransaction())
+{
+    try
+    {
+        // 1) INSERT INTO orders ...
+        // 2) INSERT INTO order_items ... (loop)
+        // 3) UPDATE products SET estoque = estoque - @q WHERE id = @id AND estoque >= @q
+        tx.Commit();
+    }
+    catch { tx.Rollback(); throw; }
+}
+```
+
+---
+
+## 5. Endpoints REST
+
+Convenção: **JSON camelCase**, datas ISO-8601 UTC, valores monetários
+sempre em **centavos** (`int`), nunca `decimal` no transporte.
+
+### 5.1 Catálogo
+
+| Método | Rota                          | Descrição                          |
+| ------ | ----------------------------- | ---------------------------------- |
+| GET    | `/api/products`               | Lista paginada (filtros via query) |
+| GET    | `/api/products/{slug}`        | Detalhe + pirâmide olfativa        |
+| GET    | `/api/families`               | Lista famílias olfativas           |
+
+### 5.2 Carrinho
+
+| Método | Rota                                  | Descrição              |
+| ------ | ------------------------------------- | ---------------------- |
+| GET    | `/api/cart`                           | Carrinho do session    |
+| POST   | `/api/cart/items`                     | Adicionar item         |
+| PUT    | `/api/cart/items/{productId}`         | Atualizar quantidade   |
+| DELETE | `/api/cart/items/{productId}`         | Remover item           |
+| DELETE | `/api/cart`                           | Esvaziar               |
+
+### 5.3 Pedidos e pagamento
+
+| Método | Rota                                  | Descrição                              |
+| ------ | ------------------------------------- | -------------------------------------- |
+| POST   | `/api/orders`                         | Cria pedido `pending` (snapshot do carrinho) |
+| GET    | `/api/orders/{id}`                    | Detalhe / status                       |
+| POST   | `/api/payments/pix`                   | Cria charge PIX, retorna QR + copia-cola |
+| POST   | `/api/payments/card`                  | Cria charge cartão (token gerado no browser) |
+| POST   | `/api/webhooks/infinitepay`           | **Webhook público** com assinatura HMAC |
+
+Identificação do carrinho de visitante: header `X-Session-Token` (UUID gerado
+e armazenado no `localStorage` do frontend) **OU** cookie HttpOnly emitido
+pelo servidor. Usuário logado: header `Authorization: Bearer <jwt>`.
+
+---
+
+## 6. Integração InfinitePay (C#)
+
+> A InfinitePay (CloudWalk) expõe API REST para charges (PIX e cartão).
+> Confira sempre os endpoints e payloads atuais em
+> <https://developers.infinitepay.io>. Os exemplos abaixo descrevem o
+> **shape** da integração; ajuste paths/campos para a versão vigente.
+
+### 6.1 Segredos
+
+| Chave                          | Onde                              |
+| ------------------------------ | --------------------------------- |
+| `InfinitePay:ApiKey`           | `Authorization: Bearer ...`       |
+| `InfinitePay:WebhookSecret`    | Validação HMAC do webhook         |
+| `InfinitePay:BaseUrl`          | `https://api.infinitepay.io`      |
+
+Use sandbox até validar end-to-end. Nunca commitar credenciais reais.
+
+### 6.2 Cliente HttpClient
+
+```csharp
+// Services/InfinitePayClient.cs
+public class InfinitePayClient
+{
+    private static readonly HttpClient _http = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
+    {
+        var c = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        c.DefaultRequestHeaders.Accept.Add(
+            new MediaTypeWithQualityHeaderValue("application/json"));
+        return c;
+    }
+
+    private static string BaseUrl =>
+        ConfigurationManager.AppSettings["InfinitePay:BaseUrl"];
+    private static string ApiKey =>
+        ConfigurationManager.AppSettings["InfinitePay:ApiKey"];
+
+    public async Task<JObject> PostAsync(string path, object body)
+    {
+        using (var req = new HttpRequestMessage(HttpMethod.Post, BaseUrl + path))
+        {
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
+            req.Content = new StringContent(
+                JsonConvert.SerializeObject(body),
+                Encoding.UTF8, "application/json");
+
+            using (var resp = await _http.SendAsync(req))
+            {
+                var text = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode)
+                    throw new InvalidOperationException(
+                        "InfinitePay " + (int)resp.StatusCode + ": " + text);
+                return JObject.Parse(text);
+            }
+        }
+    }
+}
+```
+
+### 6.3 PIX
+
+```csharp
+// Controllers/PaymentsController.cs
+[RoutePrefix("api/payments")]
+public class PaymentsController : ApiController
+{
+    [HttpPost, Route("pix")]
+    public async Task<IHttpActionResult> CreatePix([FromBody] CreatePixRequest req)
+    {
+        if (req == null || req.OrderId == Guid.Empty)
+            return BadRequest("orderId obrigatório");
+
+        var order = new OrderRepository().GetById(req.OrderId)
+                    ?? throw new HttpResponseException(HttpStatusCode.NotFound);
+
+        var client = new InfinitePayClient();
+        var charge = await client.PostAsync("/v1/charges", new {
+            amount         = order.TotalCentavos,           // total recalculado no servidor
+            currency       = "BRL",
+            payment_method = "pix",
+            customer       = new { email = order.Email },
+            metadata       = new { order_id = order.Id.ToString() }
+        });
+
+        var pixQr    = (string)charge["pix"]["qr_code_base64"];
+        var copiaCola = (string)charge["pix"]["copy_paste"];
+        var chargeId  = (string)charge["id"];
+
+        new OrderRepository().MarkAwaitingPix(order.Id, chargeId, pixQr, copiaCola);
+
+        return Ok(new { qrCodeBase64 = pixQr, copiaECola = copiaCola });
+    }
+}
+```
+
+### 6.4 Cartão de Crédito
+
+**Tokenização SEMPRE no browser** via SDK JS oficial do InfinitePay. O
+servidor só recebe um **token opaco** — nunca PAN/CVV.
+
+```csharp
+[HttpPost, Route("card")]
+public async Task<IHttpActionResult> CreateCard([FromBody] CreateCardRequest req)
+{
+    var order = new OrderRepository().GetById(req.OrderId)
+                ?? throw new HttpResponseException(HttpStatusCode.NotFound);
+
+    var charge = await new InfinitePayClient().PostAsync("/v1/charges", new {
+        amount         = order.TotalCentavos,
+        currency       = "BRL",
+        payment_method = "credit_card",
+        card           = new { token = req.CardToken, holder_name = req.HolderName },
+        installments   = req.Parcelas,
+        customer       = new { email = order.Email },
+        metadata       = new { order_id = order.Id.ToString() }
+    });
+
+    var status   = (string)charge["status"];
+    var chargeId = (string)charge["id"];
+    var novo     = status == "paid" ? "paid" : "failed";
+    new OrderRepository().UpdateStatus(order.Id, novo, chargeId);
+
+    return Ok(new { status = novo, chargeId });
+}
+```
+
+### 6.5 Webhook InfinitePay
+
+Endpoint **público** (sem auth de usuário) — defendido por HMAC + idempotência.
+
+```csharp
+[RoutePrefix("api/webhooks")]
+public class WebhooksController : ApiController
+{
+    [HttpPost, Route("infinitepay")]
+    public async Task<HttpResponseMessage> InfinitePay()
+    {
+        var body = await Request.Content.ReadAsStringAsync();
+        var signature = Request.Headers.TryGetValues("X-InfinitePay-Signature", out var v)
+                        ? v.FirstOrDefault() : null;
+
+        var secret = ConfigurationManager.AppSettings["InfinitePay:WebhookSecret"];
+        if (!WebhookVerifier.IsValid(body, signature, secret))
+            return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+
+        var evt = JObject.Parse(body);
+        var eventId   = (string)evt["id"];
+        var eventType = (string)evt["type"];
+        var orderId   = (string)evt["data"]?["metadata"]?["order_id"];
+
+        var repo = new OrderRepository();
+
+        // Idempotência via UNIQUE em payment_events.event_id
+        if (!repo.TrySavePaymentEvent(eventId, eventType, orderId, body))
+            return new HttpResponseMessage(HttpStatusCode.OK); // já processado
+
+        string newStatus = null;
+        switch (eventType)
+        {
+            case "charge.paid":      newStatus = "paid"; break;
+            case "charge.failed":    newStatus = "failed"; break;
+            case "charge.refunded":  newStatus = "refunded"; break;
+            case "charge.cancelled": newStatus = "cancelled"; break;
+        }
+        if (newStatus != null && !string.IsNullOrEmpty(orderId))
+            repo.UpdateStatus(Guid.Parse(orderId), newStatus, null);
+
+        return new HttpResponseMessage(HttpStatusCode.OK);
+    }
+}
+```
+
+Verificação HMAC com **comparação time-safe**:
+
+```csharp
+// Services/WebhookVerifier.cs
+public static class WebhookVerifier
+{
+    public static bool IsValid(string body, string signatureHex, string secret)
+    {
+        if (string.IsNullOrEmpty(signatureHex)) return false;
+
+        using (var h = new HMACSHA256(Encoding.UTF8.GetBytes(secret)))
+        {
+            var expected = h.ComputeHash(Encoding.UTF8.GetBytes(body));
+            var received = HexToBytes(signatureHex);
+            if (expected.Length != received.Length) return false;
+
+            int diff = 0;
+            for (int i = 0; i < expected.Length; i++)
+                diff |= expected[i] ^ received[i];
+            return diff == 0;
+        }
+    }
+
+    private static byte[] HexToBytes(string hex)
+    {
+        var bytes = new byte[hex.Length / 2];
+        for (int i = 0; i < bytes.Length; i++)
+            bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
+        return bytes;
+    }
+}
+```
+
+URL pública para configurar no painel InfinitePay:
+`https://api.maryar.com.br/api/webhooks/infinitepay`
+
+---
+
+## 7. ASP Clássico — quando usar e como conviver
+
+ASP Clássico (`.asp`, VBScript) pode permanecer para **utilidades internas**:
+- páginas de relatório legadas, exportações CSV simples;
+- formulários administrativos antigos;
+- ferramentas internas que já existem na sua operação.
+
+Regras de convivência no mesmo site IIS:
+
+- **App pool separado** para `/api` (ASP.NET 4.5.2 Integrated) e para `.asp`
+  (Classic mode, .NET CLR `No Managed Code`) — evita conflitos de pipeline.
+- ASP Clássico **não** deve emitir endpoints públicos críticos (pagamento,
+  autenticação, webhook). Falta JSON nativo, falta HMAC time-safe robusto,
+  falta cliente HTTPS moderno. Tudo isso fica no Web API.
+- Conexão MySQL no ASP Clássico via **ODBC**:
+  ```vbscript
+  <%
+  Dim cn
+  Set cn = Server.CreateObject("ADODB.Connection")
+  cn.Open "DRIVER={MySQL ODBC 8.0 Unicode Driver};" & _
+          "SERVER=localhost;DATABASE=maryar;" & _
+          "UID=maryar_ro;PWD=" & Application("MysqlRoPwd") & ";" & _
+          "OPTION=3;SSLMODE=REQUIRED;"
+  %>
+  ```
+- Sempre usar `ADODB.Command` com parâmetros — **nunca** concatenar SQL
+  (risco crítico de SQL Injection).
+- Senhas/segredos nunca hardcoded no `.asp`; carregue de `Web.config`
+  externo via `Application` no `global.asa` durante deploy.
+
+---
+
+## 8. Frontend (Lovable) — consumindo as APIs
+
+Centralizar todas as chamadas em um único cliente HTTP:
 
 ```ts
-// src/lib/infinitepay.server.ts
-const BASE_URL = process.env.INFINITEPAY_BASE_URL
-  ?? "https://api.infinitepay.io"; // confira o host correto na doc oficial
+// src/lib/api.ts
+const BASE = import.meta.env.VITE_API_BASE_URL; // ex.: https://api.maryar.com.br
 
-export async function infinitePayFetch<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const apiKey = process.env.INFINITEPAY_API_KEY;
-  if (!apiKey) throw new Error("INFINITEPAY_API_KEY ausente");
+function sessionToken() {
+  let t = localStorage.getItem("maryar.session");
+  if (!t) {
+    t = crypto.randomUUID();
+    localStorage.setItem("maryar.session", t);
+  }
+  return t;
+}
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      "Accept": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
+      "X-Session-Token": sessionToken(),
       ...(init.headers ?? {}),
     },
   });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`InfinitePay ${res.status}: ${body}`);
-  }
+  if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json() as Promise<T>;
 }
 ```
 
-### 4.3 Cobrança PIX
-
-Fluxo:
-1. Frontend chama `createPixChargeFn(orderId)`.
-2. Servidor cria a charge no InfinitePay com `payment_method: "pix"`.
-3. Salva `pix_qrcode`, `pix_copia_e_cola`, `infinitepay_charge_id` na
-   order e marca status `awaiting_payment`.
-4. Frontend exibe QR Code + botão "copiar código".
-5. Confirmação chega via **webhook** (preferido) ou polling.
-
-```ts
-// src/lib/payments.functions.ts
-import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
-import { infinitePayFetch } from "./infinitepay.server";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-
-export const createPixChargeFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ orderId: z.string().uuid() }))
-  .handler(async ({ data }) => {
-    const { data: order } = await supabaseAdmin
-      .from("orders").select("*").eq("id", data.orderId).single();
-    if (!order) throw new Error("Pedido não encontrado");
-
-    const charge = await infinitePayFetch<{
-      id: string;
-      pix: { qr_code: string; qr_code_base64: string; copy_paste: string };
-    }>("/v1/charges", {
-      method: "POST",
-      body: JSON.stringify({
-        amount: order.total_centavos,
-        currency: "BRL",
-        payment_method: "pix",
-        customer: { email: order.email },
-        metadata: { order_id: order.id },
-      }),
-    });
-
-    await supabaseAdmin.from("orders").update({
-      status: "awaiting_payment",
-      infinitepay_charge_id: charge.id,
-      pix_qrcode: charge.pix.qr_code_base64,
-      pix_copia_e_cola: charge.pix.copy_paste,
-    }).eq("id", order.id);
-
-    return {
-      qrCodeBase64: charge.pix.qr_code_base64,
-      copiaECola: charge.pix.copy_paste,
-    };
-  });
+Variável pública em `.env`:
+```
+VITE_API_BASE_URL=https://api.maryar.com.br
 ```
 
-### 4.4 Cobrança Cartão de Crédito
-
-**Nunca** envie PAN/CVV pelo seu servidor. Use a SDK JS oficial da
-InfinitePay no browser para gerar um **token** do cartão e envie só o
-token para o seu servidor.
-
-Fluxo:
-1. Frontend tokeniza cartão via SDK do InfinitePay.
-2. `createCardChargeFn({ orderId, cardToken, parcelas, holderName })`.
-3. Servidor cria charge `payment_method: "credit_card"`.
-4. Atualiza order para `paid` (ou `failed`).
-
-```ts
-export const createCardChargeFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    orderId:    z.string().uuid(),
-    cardToken:  z.string().min(10).max(500),
-    parcelas:   z.number().int().min(1).max(12),
-    holderName: z.string().min(2).max(120),
-  }))
-  .handler(async ({ data }) => {
-    const { data: order } = await supabaseAdmin
-      .from("orders").select("*").eq("id", data.orderId).single();
-    if (!order) throw new Error("Pedido não encontrado");
-
-    const charge = await infinitePayFetch<{ id: string; status: string }>(
-      "/v1/charges",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          amount: order.total_centavos,
-          currency: "BRL",
-          payment_method: "credit_card",
-          card: { token: data.cardToken, holder_name: data.holderName },
-          installments: data.parcelas,
-          customer: { email: order.email },
-          metadata: { order_id: order.id },
-        }),
-      },
-    );
-
-    const novoStatus = charge.status === "paid" ? "paid" : "failed";
-    await supabaseAdmin.from("orders").update({
-      status: novoStatus,
-      infinitepay_charge_id: charge.id,
-    }).eq("id", order.id);
-
-    return { status: novoStatus, chargeId: charge.id };
-  });
-```
-
-### 4.5 Webhook (confirmação assíncrona)
-
-Coloque em `/api/public/*` para bypassar auth do site publicado, mas
-**sempre** valide assinatura.
-
-```ts
-// src/routes/api/public/infinitepay-webhook.ts
-import { createFileRoute } from "@tanstack/react-router";
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-
-export const Route = createFileRoute("/api/public/infinitepay-webhook")({
-  server: {
-    handlers: {
-      POST: async ({ request }) => {
-        const signature = request.headers.get("x-infinitepay-signature") ?? "";
-        const body = await request.text();
-
-        const secret = process.env.INFINITEPAY_WEBHOOK_SECRET!;
-        const expected = createHmac("sha256", secret).update(body).digest("hex");
-
-        const a = Buffer.from(signature);
-        const b = Buffer.from(expected);
-        if (a.length !== b.length || !timingSafeEqual(a, b)) {
-          return new Response("invalid signature", { status: 401 });
-        }
-
-        const event = JSON.parse(body) as {
-          id: string;
-          type: string;        // 'charge.paid' | 'charge.failed' | ...
-          data: { id: string; status: string; metadata?: { order_id?: string } };
-        };
-
-        // Idempotência
-        const { error: dupErr } = await supabaseAdmin
-          .from("payment_events")
-          .insert({
-            provider: "infinitepay",
-            event_id: event.id,
-            event_type: event.type,
-            payload: event,
-            order_id: event.data.metadata?.order_id ?? null,
-          });
-        if (dupErr && dupErr.code === "23505") {
-          return new Response("ok"); // já processado
-        }
-
-        const orderId = event.data.metadata?.order_id;
-        if (!orderId) return new Response("no order metadata", { status: 200 });
-
-        const statusMap: Record<string, string> = {
-          "charge.paid": "paid",
-          "charge.failed": "failed",
-          "charge.refunded": "refunded",
-          "charge.cancelled": "cancelled",
-        };
-        const newStatus = statusMap[event.type];
-        if (newStatus) {
-          await supabaseAdmin
-            .from("orders")
-            .update({ status: newStatus, updated_at: new Date().toISOString() })
-            .eq("id", orderId);
-        }
-
-        return new Response("ok");
-      },
-    },
-  },
-});
-```
-
-URL estável para configurar no painel do InfinitePay:
-`https://project--<project-id>.lovable.app/api/public/infinitepay-webhook`
-
-### 4.6 Estados do pedido
-
-```
-pending ──► awaiting_payment ──► paid ──► shipped ──► delivered
-                  │                  │
-                  ▼                  ▼
-                failed            refunded
-                  │
-                  ▼
-              cancelled
+Tokenização do cartão acontece no **browser** com a SDK JS do InfinitePay;
+o frontend envia para `/api/payments/card` apenas:
+```json
+{ "orderId": "...", "cardToken": "tok_xxx", "parcelas": 3, "holderName": "..." }
 ```
 
 ---
 
-## 5. Segurança — checklist obrigatório
+## 9. Segurança — checklist obrigatório
 
-- [ ] `INFINITEPAY_API_KEY` e `INFINITEPAY_WEBHOOK_SECRET` apenas em Secrets.
-- [ ] Validar **assinatura HMAC** de todo webhook com `timingSafeEqual`.
-- [ ] Verificar **idempotência** via `payment_events.event_id` UNIQUE.
-- [ ] Nunca confiar em status enviado pelo cliente — fonte da verdade é
-      a resposta direta do InfinitePay + webhook.
-- [ ] Recalcular `total_centavos` no servidor a partir dos produtos
-      (nunca aceitar total enviado pelo frontend).
-- [ ] RLS habilitada em **todas** as tabelas com dados de usuário.
-- [ ] Tokenização de cartão **apenas no browser** via SDK oficial.
-- [ ] Logs sem dados sensíveis (sem PAN, sem CVV, sem token bruto).
-- [ ] Rate limit no endpoint de criação de pedido.
+- [ ] TLS 1.2+ habilitado no `Global.asax` e exigido no IIS.
+- [ ] HSTS, `X-Content-Type-Options: nosniff`, `Referrer-Policy`.
+- [ ] Segredos via `configSource` externo ou DPAPI, **fora** do repositório.
+- [ ] Toda query SQL com parâmetros nomeados (`@x`), **zero** concatenação.
+- [ ] Usuário MySQL da aplicação com privilégios mínimos (sem `GRANT ALL`).
+- [ ] Webhook valida HMAC com comparação **time-safe** e checa idempotência por `payment_events.event_id` UNIQUE.
+- [ ] `total_centavos` SEMPRE recalculado no servidor a partir dos preços atuais — nunca aceitar total enviado pelo frontend.
+- [ ] PAN/CVV **jamais** trafegam pelo seu servidor — só token da SDK.
+- [ ] Logs sem dados sensíveis (sem token, sem PAN, sem CVV).
+- [ ] CORS restrito aos domínios oficiais do frontend.
+- [ ] Rate limiting (IIS Dynamic IP Restrictions ou middleware OWIN) em `/api/orders` e `/api/payments/*`.
+- [ ] App pools separados (ASP.NET vs ASP Clássico); contas de serviço dedicadas.
 
 ---
 
-## 6. Testes manuais sugeridos
+## 10. Testes manuais
 
-1. **PIX feliz**: criar pedido → gerar QR → simular pagamento no
-   sandbox → confirmar que webhook altera status para `paid`.
-2. **PIX expirado**: não pagar → status permanece `awaiting_payment` →
-   verificar job de limpeza (futuro).
+1. **PIX feliz**: criar pedido → `/api/payments/pix` → simular pagamento no sandbox → webhook altera status para `paid`.
+2. **PIX não pago**: status permanece `awaiting_payment` (job futuro de expiração).
 3. **Cartão aprovado**: token válido → `paid`.
-4. **Cartão recusado**: token de teste recusado → `failed` e mensagem
-   amigável no UI.
-5. **Webhook replay**: reenviar mesmo evento → segunda chamada não duplica
-   atualização (idempotência via `event_id`).
-6. **Assinatura inválida**: enviar webhook com `x-infinitepay-signature`
-   adulterada → 401.
+4. **Cartão recusado**: token de teste recusado → `failed` + mensagem amigável no UI.
+5. **Webhook replay**: reenviar mesmo evento → segunda chamada não duplica (idempotência).
+6. **Assinatura adulterada**: webhook com HMAC inválida → 401.
+7. **Total adulterado**: frontend envia `total` divergente → servidor ignora e recalcula.
 
 ---
 
-## 7. Roadmap por fases
+## 11. Roadmap por fases
 
-| Fase | Entregáveis                                                              |
-| ---- | ------------------------------------------------------------------------ |
-| 1    | (Concluída) Home + Catálogo + PDP com mocks                              |
-| 2    | Ativar Lovable Cloud, criar schema, migrar mocks para DB, auth de cliente|
-| 3    | Carrinho persistente + Checkout (endereço, frete fixo, resumo)           |
-| 4    | Integração InfinitePay PIX (sandbox)                                     |
-| 5    | Integração InfinitePay Cartão + parcelamento                             |
-| 6    | Webhook + painel "Meus Pedidos"                                          |
-| 7    | Área administrativa (CRUD produtos, pedidos, estoque)                    |
-| 8    | Quiz olfativo, blog, recomendações personalizadas                        |
+| Fase | Entregáveis                                                                          |
+| ---- | ------------------------------------------------------------------------------------ |
+| 1    | (Concluída) Frontend Home + Catálogo + PDP com mocks                                 |
+| 2    | Criar banco MySQL, projeto ASP.NET 4.5.2 com `ProductsController` + `Db.cs`          |
+| 3    | Migrar mocks (`src/data/perfumes.ts`) para `products` + `perfume_details`            |
+| 4    | Carrinho persistente + `OrdersController` + endereço + frete fixo                    |
+| 5    | InfinitePay PIX (sandbox) + tela de pagamento PIX no frontend                        |
+| 6    | InfinitePay Cartão + parcelamento + tokenização SDK no browser                       |
+| 7    | Webhook + tela "Meus Pedidos" + emails transacionais                                 |
+| 8    | Área administrativa (CRUD produtos, pedidos, estoque) — pode usar ASP Clássico legado |
+| 9    | Quiz olfativo, blog, recomendações personalizadas                                    |
 
 ---
 
-## 8. Referências
+## 12. Referências
 
-- TanStack Start — server functions: <https://tanstack.com/start>
+- ASP.NET Web API 2: <https://learn.microsoft.com/aspnet/web-api>
+- MySQL Connector/NET: <https://dev.mysql.com/doc/connector-net/en/>
 - InfinitePay Developers: <https://developers.infinitepay.io>
-- Lovable Cloud: <https://docs.lovable.dev/features/cloud>
-- Padrão de papéis (user_roles) — ver instruções internas do projeto.
+- Padrões OWASP para Web API: <https://owasp.org/www-project-api-security/>
 
-> Dúvidas ou ajustes: edite este arquivo em `docs/INTEGRACAO-APIS-INFINITEPAY.md`.
+> Edite este arquivo em `docs/INTEGRACAO-APIS-INFINITEPAY.md` conforme a
+> arquitetura evoluir.
