@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -100,7 +101,4 @@ namespace Maryar.Api.Controllers
             return Ok(new { ok = true });
         }
     }
-
-    // alias para o "using" enxuto
-    using global = System.Collections.Generic;
 }
