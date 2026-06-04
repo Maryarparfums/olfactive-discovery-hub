@@ -88,7 +88,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "Maryar: curadoria de perfumes, skincare e maquiagem premium. Descubra fragrâncias por família olfativa, estação e ocasião.",
       },
-      { property: "og:title", content: "Maryar — Perfumaria de nicho" },
+      { property: "og:title", content: "Maryar — Perfumaria de nicho e rituais de cuidado" },
       {
         property: "og:description",
         content:
@@ -97,6 +97,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:type", content: "website" },
       { property: "og:site_name", content: "Maryar" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Maryar — Perfumaria de nicho e rituais de cuidado" },
+      { name: "description", content: "Maryar is a premium e-commerce platform for perfumes and beauty products, offering advanced olfactory discovery." },
+      { property: "og:description", content: "Maryar is a premium e-commerce platform for perfumes and beauty products, offering advanced olfactory discovery." },
+      { name: "twitter:description", content: "Maryar is a premium e-commerce platform for perfumes and beauty products, offering advanced olfactory discovery." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/32aee6ac-9221-44d3-8190-3b1a6f3a92d4/id-preview-93e74019--448b0e5e-a531-460d-a1cb-ab7432c53675.lovable.app-1780594478762.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/32aee6ac-9221-44d3-8190-3b1a6f3a92d4/id-preview-93e74019--448b0e5e-a531-460d-a1cb-ab7432c53675.lovable.app-1780594478762.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
