@@ -1,9 +1,9 @@
-import { Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
 
 const left = [
-  { to: "/catalogo", label: "Coleções", search: undefined },
-  { to: "/catalogo", label: "Aromas", search: { familia: "Amadeirado" } },
-] as const;
+  { to: "/catalogo", label: "Coleções" },
+  { to: "/catalogo?familia=Amadeirado", label: "Aromas" },
+];
 
 export function SiteHeader() {
   return (
@@ -11,12 +11,7 @@ export function SiteHeader() {
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <nav className="flex gap-8 text-[11px] uppercase tracking-[0.2em] font-medium">
           {left.map((l) => (
-            <Link
-              key={l.label}
-              to={l.to}
-              search={l.search as never}
-              className="hover:text-muted-foreground transition-colors"
-            >
+            <Link key={l.label} to={l.to} className="hover:text-muted-foreground transition-colors">
               {l.label}
             </Link>
           ))}
@@ -31,12 +26,8 @@ export function SiteHeader() {
         </Link>
 
         <nav className="flex gap-8 text-[11px] uppercase tracking-[0.2em] font-medium">
-          <a href="#perfil" className="hover:text-muted-foreground transition-colors">
-            Perfil
-          </a>
-          <a href="#sacola" className="hover:text-muted-foreground transition-colors">
-            Sacola (0)
-          </a>
+          <a href="#perfil" className="hover:text-muted-foreground transition-colors">Perfil</a>
+          <a href="#sacola" className="hover:text-muted-foreground transition-colors">Sacola (0)</a>
         </nav>
       </div>
     </header>
