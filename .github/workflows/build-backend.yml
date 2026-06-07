@@ -26,16 +26,43 @@ jobs:
       - name: 3) Preparar NuGet
         uses: NuGet/setup-nuget@v2
 
-      - name: 4) Restaurar pacotes NuGet
+      - name: 4) Localizar VisualStudio e Web targets
+        id: vsenv
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          if (-not $vsPath) { $vsPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise" }
+          Write-Host "VS Path: $vsPath"
+          $vsToolsPath = Join-Path $vsPath "MSBuild\Microsoft\VisualStudio\v17.0"
+          $webAppTargets = Join-Path $vsToolsPath "WebApplications\Microsoft.WebApplication.targets"
+          if (-not (Test-Path $webAppTargets)) {
+            Write-Host "WebApplication.targets nao encontrado em $webAppTargets. Instalando workload Web via VS Installer..."
+            $installer = Join-Path $vsPath "..\..\Installer\setup.exe"
+            if (Test-Path $installer) {
+              & $installer modify --installPath "$vsPath" --add Microsoft.VisualStudio.Component.WebDeploy --add Microsoft.VisualStudio.Component.Web --quiet --norestart --wait | Out-Null
+            }
+          }
+          if (-not (Test-Path $webAppTargets)) {
+            Write-Host "Tentando baixar MSBuild.Microsoft.VisualStudio.Web.targets via NuGet como fallback..."
+            nuget install MSBuild.Microsoft.VisualStudio.Web.targets -Version 14.0.0.3 -OutputDirectory "$env:RUNNER_TEMP\webtargets" | Out-Null
+            $vsToolsPath = "$env:RUNNER_TEMP\webtargets\MSBuild.Microsoft.VisualStudio.Web.targets.14.0.0.3\tools\VSToolsPath"
+          }
+          echo "VSToolsPath=$vsToolsPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "VisualStudioVersion=17.0" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "VSToolsPath definido como: $vsToolsPath"
+
+      - name: 5) Restaurar pacotes NuGet
         working-directory: backend/Maryar.Api
         run: nuget restore packages.config -PackagesDirectory ..\packages -SolutionDirectory ..
 
-      - name: 5) Compilar em Release e publicar em pasta
+      - name: 6) Compilar em Release e publicar em pasta
         working-directory: backend/Maryar.Api
         run: >
           msbuild Maryar.Api.csproj
           /p:Configuration=Release
           /p:Platform=AnyCPU
+          /p:VisualStudioVersion=17.0
+          /p:VSToolsPath="$env:VSToolsPath"
           /p:DeployOnBuild=true
           /p:WebPublishMethod=FileSystem
           /p:DeployDefaultTarget=WebPublish
@@ -44,12 +71,12 @@ jobs:
           /p:PrecompileBeforePublish=false
           /p:ExcludeApp_Data=true
 
-      - name: 6) Compactar a pasta publish em maryar-api-deploy.zip
+      - name: 7) Compactar a pasta publish em maryar-api-deploy.zip
         run: |
           Compress-Archive -Path backend/publish/* -DestinationPath maryar-api-deploy.zip -Force
         shell: pwsh
 
-      - name: 7) Publicar o ZIP como artifact (download na aba Actions)
+      - name: 8) Publicar o ZIP como artifact (download na aba Actions)
         uses: actions/upload-artifact@v4
         with:
           name: maryar-api-deploy
