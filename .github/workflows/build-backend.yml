@@ -53,7 +53,13 @@ jobs:
 
       - name: 5) Restaurar pacotes NuGet
         working-directory: backend/Maryar.Api
-        run: nuget restore packages.config -PackagesDirectory ..\packages -SolutionDirectory ..
+        shell: pwsh
+        run: |
+          nuget sources Add -Name "nuget.org" -Source "https://api.nuget.org/v3/index.json" -ErrorAction SilentlyContinue
+          nuget restore packages.config -PackagesDirectory ..\packages -SolutionDirectory .. -Verbosity normal
+          if ($LASTEXITCODE -ne 0) { throw "NuGet restore falhou" }
+          Write-Host "=== Conteudo de ..\packages ==="
+          Get-ChildItem ..\packages -Directory | Select-Object Name
 
       - name: 6) Compilar em Release e publicar em pasta
         working-directory: backend/Maryar.Api
