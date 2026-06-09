@@ -9,16 +9,36 @@ namespace Maryar.Api
     {
         protected void Application_Start()
         {
-            // Força TLS 1.2 para chamadas HTTPS de saída (InfinitePay)
             ServicePointManager.SecurityProtocol =
-                SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11;
+                SecurityProtocolType.Tls12 |
+                SecurityProtocolType.Tls11;
 
             GlobalConfiguration.Configure(WebApiConfig.Register);
         }
 
-        protected void Application_BeginRequest(object sender, EventArgs e)
+        protected void Application_Error()
         {
-            // Resposta a preflight CORS já é tratada pelo EnableCorsAttribute.
+            var ex = Server.GetLastError();
+            if (ex == null) return;
+
+            Server.ClearError();
+
+            Response.Clear();
+            Response.StatusCode = 500;
+            Response.ContentType = "text/plain; charset=utf-8";
+            Response.Write("=== ERRO CAPTURADO EM Application_Error ===\r\n\r\n");
+            Response.Write("TIPO: " + ex.GetType().FullName + "\r\n");
+            Response.Write("MENSAGEM: " + ex.Message + "\r\n");
+
+            if (ex.InnerException != null)
+            {
+                Response.Write("\r\nINNER EXCEPTION:\r\n");
+                Response.Write("TIPO: " + ex.InnerException.GetType().FullName + "\r\n");
+                Response.Write("MENSAGEM: " + ex.InnerException.Message + "\r\n");
+            }
+
+            Response.Write("\r\nSTACK TRACE:\r\n" + ex.StackTrace);
+            Response.End();
         }
     }
 }
