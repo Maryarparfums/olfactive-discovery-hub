@@ -19,11 +19,12 @@ namespace Maryar.Api
             };
             config.EnableCors(cors);
 
-            // JSON: camelCase + ignorar nulos
+            // JSON: camelCase + ignorar nulos + sem referências circulares
             var json = config.Formatters.JsonFormatter;
             json.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
             json.SerializerSettings.NullValueHandling = NullValueHandling.Ignore;
             json.SerializerSettings.DateFormatHandling = DateFormatHandling.IsoDateFormat;
+            json.SerializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
 
             // Remove XML para simplificar respostas
             var xml = config.Formatters.XmlFormatter;
