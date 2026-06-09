@@ -17,32 +17,9 @@ namespace Maryar.Api.Controllers
         public ProductsController(IProductRepository repo) { _repo = repo; }
 
         [HttpGet, Route("")]
-        public IHttpActionResult List([FromUri] ProductQueryDto query)
+        public IHttpActionResult List()
         {
-            if (query == null) query = new ProductQueryDto();
-            int total;
-            var items = _repo.Query(query, out total)
-                .Select(p => new ProductListItemDto
-                {
-                    Id = p.Id,
-                    Slug = p.Slug,
-                    Name = p.Name,
-                    Brand = p.BrandName,
-                    Family = p.FamilyName,
-                    Concentration = p.Concentration,
-                    VolumeMl = p.VolumeMl,
-                    Price = p.Price,
-                    ImageUrl = p.ImageUrl
-                })
-                .ToList();
-
-            return Ok(new
-            {
-                total,
-                page = query.Page < 1 ? 1 : query.Page,
-                pageSize = query.PageSize < 1 ? 24 : query.PageSize,
-                items
-            });
+            return Ok(new { ok = true, msg = "hardcoded" });
         }
 
         [HttpGet, Route("{slug}")]
