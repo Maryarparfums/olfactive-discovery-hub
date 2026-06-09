@@ -13,7 +13,7 @@ namespace Maryar.Api.Controllers
     public class ProductsController : ApiController
     {
         private readonly IProductRepository _repo;
-        public ProductsController() : this(new ProductRepository()) { }
+        public ProductsController() { _repo = null; }
         public ProductsController(IProductRepository repo) { _repo = repo; }
 
         [HttpGet, Route("")]
