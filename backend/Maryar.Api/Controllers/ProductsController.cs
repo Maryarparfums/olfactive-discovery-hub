@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Web.Http;
 using Maryar.Api.Dtos;
-using Maryar.Api.Models;
 using Maryar.Api.Repositories.Interfaces;
 using Maryar.Api.Repositories.MySql;
 using Newtonsoft.Json;
@@ -50,9 +49,6 @@ namespace Maryar.Api.Controllers
             var p = _repo.GetBySlug(slug);
             if (p == null) return NotFound();
 
-            ProductDetail d = null;
-            try { d = _repo.GetDetailsByProductId(p.Id); } catch { }
-
             var dto = new ProductDetailDto
             {
                 Id = p.Id,
@@ -69,19 +65,24 @@ namespace Maryar.Api.Controllers
                 DetailImageUrl = p.DetailImageUrl
             };
 
-            if (d != null)
+            try
             {
-                dto.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
-                dto.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
-                dto.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
-                dto.Estacao      = Deserialize<Dictionary<string, int>>(d.EstacaoJson);
-                dto.Periodo      = Deserialize<Dictionary<string, int>>(d.PeriodoJson);
-                dto.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
-                dto.Similares    = Deserialize<List<string>>(d.SimilaresJson);
-                dto.Fixacao      = d.Fixacao;
-                dto.Projecao     = d.Projecao;
-                dto.DuracaoHoras = d.DuracaoHoras;
+                var d = _repo.GetDetailsByProductId(p.Id);
+                if (d != null)
+                {
+                    dto.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
+                    dto.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
+                    dto.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
+                    dto.Estacao      = Deserialize<Dictionary<string, int>>(d.EstacaoJson);
+                    dto.Periodo      = Deserialize<Dictionary<string, int>>(d.PeriodoJson);
+                    dto.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
+                    dto.Similares    = Deserialize<List<string>>(d.SimilaresJson);
+                    dto.Fixacao      = d.Fixacao;
+                    dto.Projecao     = d.Projecao;
+                    dto.DuracaoHoras = d.DuracaoHoras;
+                }
             }
+            catch { }
 
             return Ok(dto);
         }
