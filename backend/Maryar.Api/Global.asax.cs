@@ -7,6 +7,13 @@ namespace Maryar.Api
 {
     public class WebApiApplication : HttpApplication
     {
+        private static readonly string[] AllowedOrigins =
+        {
+            "https://maryar.com.br",
+            "https://www.maryar.com.br",
+            "http://localhost:5173"
+        };
+
         protected void Application_Start()
         {
             ServicePointManager.SecurityProtocol =
@@ -16,29 +23,25 @@ namespace Maryar.Api
             GlobalConfiguration.Configure(WebApiConfig.Register);
         }
 
-        protected void Application_Error()
+        protected void Application_BeginRequest()
         {
-            var ex = Server.GetLastError();
-            if (ex == null) return;
+            var origin = Request.Headers["Origin"];
 
-            Server.ClearError();
-
-            Response.Clear();
-            Response.StatusCode = 500;
-            Response.ContentType = "text/plain; charset=utf-8";
-            Response.Write("=== ERRO CAPTURADO EM Application_Error ===\r\n\r\n");
-            Response.Write("TIPO: " + ex.GetType().FullName + "\r\n");
-            Response.Write("MENSAGEM: " + ex.Message + "\r\n");
-
-            if (ex.InnerException != null)
+            if (!string.IsNullOrEmpty(origin) &&
+                Array.IndexOf(AllowedOrigins, origin) >= 0)
             {
-                Response.Write("\r\nINNER EXCEPTION:\r\n");
-                Response.Write("TIPO: " + ex.InnerException.GetType().FullName + "\r\n");
-                Response.Write("MENSAGEM: " + ex.InnerException.Message + "\r\n");
+                Response.Headers.Set("Access-Control-Allow-Origin", origin);
+                Response.Headers.Set("Access-Control-Allow-Credentials", "true");
+                Response.Headers.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                Response.Headers.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
             }
 
-            Response.Write("\r\nSTACK TRACE:\r\n" + ex.StackTrace);
-            Response.End();
+            if (Request.HttpMethod == "OPTIONS")
+            {
+                Response.StatusCode = 200;
+                Response.Flush();
+                Response.End();
+            }
         }
     }
 }
