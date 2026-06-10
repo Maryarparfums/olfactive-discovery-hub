@@ -9,7 +9,6 @@ using Maryar.Api.Services;
 
 namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("api/auth")]
     public class AuthController : ApiController
     {
         private readonly IUserRepository _users;
@@ -18,7 +17,7 @@ namespace Maryar.Api.Controllers
         public AuthController() : this(new UserRepository(), new JwtService()) { }
         public AuthController(IUserRepository users, JwtService jwt) { _users = users; _jwt = jwt; }
 
-        [HttpPost, Route("signup")]
+        [HttpPost]
         public IHttpActionResult SignUp([FromBody] SignUpRequest req)
         {
             if (req == null || string.IsNullOrWhiteSpace(req.Email)
@@ -46,7 +45,7 @@ namespace Maryar.Api.Controllers
             });
         }
 
-        [HttpPost, Route("signin")]
+        [HttpPost]
         public IHttpActionResult SignIn([FromBody] SignInRequest req)
         {
             if (req == null || string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
