@@ -18,6 +18,19 @@ namespace Maryar.Api
             config.Formatters.Remove(config.Formatters.XmlFormatter);
             config.Filters.Add(new ApiExceptionFilter());
 
+            // Auth
+            config.Routes.MapHttpRoute(
+                name: "AuthSignUp",
+                routeTemplate: "auth/signup",
+                defaults: new { controller = "Auth", action = "SignUp" }
+            );
+            config.Routes.MapHttpRoute(
+                name: "AuthSignIn",
+                routeTemplate: "auth/signin",
+                defaults: new { controller = "Auth", action = "SignIn" }
+            );
+
+            // Produtos
             config.Routes.MapHttpRoute(
                 name: "ProductsBySlug",
                 routeTemplate: "products/{slug}",
@@ -28,6 +41,8 @@ namespace Maryar.Api
                 routeTemplate: "products",
                 defaults: new { controller = "Products" }
             );
+
+            // Brands e Families
             config.Routes.MapHttpRoute(
                 name: "BrandsList",
                 routeTemplate: "brands",
@@ -38,6 +53,8 @@ namespace Maryar.Api
                 routeTemplate: "families",
                 defaults: new { controller = "Families" }
             );
+
+            // Fallback genérico
             config.Routes.MapHttpRoute(
                 name: "DefaultApi",
                 routeTemplate: "{controller}/{id}",
