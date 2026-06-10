@@ -26,27 +26,31 @@ namespace Maryar.Api
             config.Formatters.Remove(config.Formatters.XmlFormatter);
             config.Filters.Add(new ApiExceptionFilter());
 
-            // Rotas sem prefixo "api/" — o subdomínio api. já cumpre esse papel
-            config.Routes.MapHttpRoute(
-                name: "ProductsList",
-                routeTemplate: "products",
-                defaults: new { controller = "Products", action = "List" }
-            );
+            // Produtos
             config.Routes.MapHttpRoute(
                 name: "ProductsBySlug",
                 routeTemplate: "products/{slug}",
                 defaults: new { controller = "Products", action = "GetBySlug" }
             );
             config.Routes.MapHttpRoute(
+                name: "ProductsList",
+                routeTemplate: "products",
+                defaults: new { controller = "Products" }
+            );
+
+            // Brands e Families — sem forçar nome de action, Web API seleciona pelo [HttpGet]
+            config.Routes.MapHttpRoute(
                 name: "BrandsList",
                 routeTemplate: "brands",
-                defaults: new { controller = "Brands", action = "List" }
+                defaults: new { controller = "Brands" }
             );
             config.Routes.MapHttpRoute(
                 name: "FamiliesList",
                 routeTemplate: "families",
-                defaults: new { controller = "Families", action = "List" }
+                defaults: new { controller = "Families" }
             );
+
+            // Fallback genérico
             config.Routes.MapHttpRoute(
                 name: "DefaultApi",
                 routeTemplate: "{controller}/{id}",
