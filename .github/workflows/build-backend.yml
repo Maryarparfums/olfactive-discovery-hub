@@ -73,18 +73,25 @@ jobs:
         run: |
           $publishBin = "backend\publish\bin"
           New-Item -ItemType Directory -Force -Path $publishBin | Out-Null
+          # Copia todos os Microsoft.IdentityModel*.dll — preferindo net4x, fallback para qualquer versao
           Get-ChildItem backend\packages -Recurse -Filter "Microsoft.IdentityModel*.dll" |
-            Where-Object { $_.FullName -match "net4[5-9]|net451|net452" } |
+            Group-Object Name |
             ForEach-Object {
-              Write-Host "Copiando: $($_.FullName)"
-              Copy-Item $_.FullName -Destination $publishBin -Force
+              $preferred = $_.Group | Where-Object { $_.FullName -match "\\net4" } | Select-Object -First 1
+              if (-not $preferred) { $preferred = $_.Group | Select-Object -First 1 }
+              Write-Host "Copiando: $($preferred.FullName)"
+              Copy-Item $preferred.FullName -Destination $publishBin -Force
             }
+          # Copia System.IdentityModel.Tokens.Jwt.dll tambem
           Get-ChildItem backend\packages -Recurse -Filter "System.IdentityModel.Tokens.Jwt.dll" |
+            Group-Object Name |
             ForEach-Object {
-              Write-Host "Copiando: $($_.FullName)"
-              Copy-Item $_.FullName -Destination $publishBin -Force
+              $preferred = $_.Group | Where-Object { $_.FullName -match "\\net4" } | Select-Object -First 1
+              if (-not $preferred) { $preferred = $_.Group | Select-Object -First 1 }
+              Write-Host "Copiando: $($preferred.FullName)"
+              Copy-Item $preferred.FullName -Destination $publishBin -Force
             }
-          Write-Host "=== DLLs em bin apos copia ==="
+          Write-Host "=== DLLs IdentityModel copiados ==="
           Get-ChildItem $publishBin -Filter "*IdentityModel*" | Select-Object Name
       - name: 9) Compactar a pasta publish em maryar-api-deploy.zip
         shell: pwsh
