@@ -49,7 +49,9 @@ namespace Maryar.Api.Controllers
         {
             var p = _repo.GetBySlug(slug);
             if (p == null) return NotFound();
-            var d = _repo.GetDetailsByProductId(p.Id);
+
+            ProductDetail d = null;
+            try { d = _repo.GetDetailsByProductId(p.Id); } catch { }
 
             var dto = new ProductDetailDto
             {
@@ -69,19 +71,26 @@ namespace Maryar.Api.Controllers
 
             if (d != null)
             {
-                dto.NotasTopo = JsonConvert.DeserializeObject<List<string>>(d.NotasTopoJson);
-                dto.NotasCoracao = JsonConvert.DeserializeObject<List<string>>(d.NotasCoracaoJson);
-                dto.NotasBase = JsonConvert.DeserializeObject<List<string>>(d.NotasBaseJson);
-                dto.Estacao = JsonConvert.DeserializeObject<Dictionary<string, int>>(d.EstacaoJson);
-                dto.Periodo = JsonConvert.DeserializeObject<Dictionary<string, int>>(d.PeriodoJson);
-                dto.Ocasiao = JsonConvert.DeserializeObject<Dictionary<string, int>>(d.OcasiaoJson);
-                dto.Fixacao = d.Fixacao;
-                dto.Projecao = d.Projecao;
+                dto.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
+                dto.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
+                dto.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
+                dto.Estacao      = Deserialize<Dictionary<string, int>>(d.EstacaoJson);
+                dto.Periodo      = Deserialize<Dictionary<string, int>>(d.PeriodoJson);
+                dto.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
+                dto.Similares    = Deserialize<List<string>>(d.SimilaresJson);
+                dto.Fixacao      = d.Fixacao;
+                dto.Projecao     = d.Projecao;
                 dto.DuracaoHoras = d.DuracaoHoras;
-                dto.Similares = JsonConvert.DeserializeObject<List<string>>(d.SimilaresJson);
             }
 
             return Ok(dto);
+        }
+
+        private static T Deserialize<T>(string json) where T : new()
+        {
+            if (string.IsNullOrWhiteSpace(json)) return new T();
+            try { return JsonConvert.DeserializeObject<T>(json); }
+            catch { return new T(); }
         }
     }
 }
