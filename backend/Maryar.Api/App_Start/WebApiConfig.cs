@@ -1,5 +1,4 @@
 using System.Web.Http;
-using System.Web.Http.Cors;
 using Maryar.Api.Infrastructure;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -10,13 +9,6 @@ namespace Maryar.Api
     {
         public static void Register(HttpConfiguration config)
         {
-            var origins = AppConfig.Get("Maryar:CorsOrigins") ?? "*";
-            var cors = new EnableCorsAttribute(origins, "*", "*")
-            {
-                SupportsCredentials = true
-            };
-            config.EnableCors(cors);
-
             var json = config.Formatters.JsonFormatter;
             json.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
             json.SerializerSettings.NullValueHandling = NullValueHandling.Ignore;
@@ -26,7 +18,6 @@ namespace Maryar.Api
             config.Formatters.Remove(config.Formatters.XmlFormatter);
             config.Filters.Add(new ApiExceptionFilter());
 
-            // Produtos
             config.Routes.MapHttpRoute(
                 name: "ProductsBySlug",
                 routeTemplate: "products/{slug}",
@@ -37,8 +28,6 @@ namespace Maryar.Api
                 routeTemplate: "products",
                 defaults: new { controller = "Products" }
             );
-
-            // Brands e Families — sem forçar nome de action, Web API seleciona pelo [HttpGet]
             config.Routes.MapHttpRoute(
                 name: "BrandsList",
                 routeTemplate: "brands",
@@ -49,8 +38,6 @@ namespace Maryar.Api
                 routeTemplate: "families",
                 defaults: new { controller = "Families" }
             );
-
-            // Fallback genérico
             config.Routes.MapHttpRoute(
                 name: "DefaultApi",
                 routeTemplate: "{controller}/{id}",
