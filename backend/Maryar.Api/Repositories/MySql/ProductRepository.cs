@@ -105,7 +105,7 @@ namespace Maryar.Api.Repositories.MySql
                         "SELECT p.id, p.slug, p.name, p.brand_id, b.name AS brand_name, " +
                         "p.family_id, f.name AS family_name, p.concentration, p.volume_ml, " +
                         "p.price, p.stock_qty, p.description, p.image_url, p.detail_image_url, " +
-                        "p.active, p.created_at " + baseFrom + where +
+                        "p.active, p.created_at, p.genero, p.inspiracao, p.status " + baseFrom + where +
                         " ORDER BY p.created_at DESC LIMIT @limit OFFSET @offset";
                     foreach (var p in parameters)
                         cmd.Parameters.Add(new MySqlParameter(p.ParameterName, p.Value));
@@ -128,7 +128,7 @@ namespace Maryar.Api.Repositories.MySql
                     "SELECT p.id, p.slug, p.name, p.brand_id, b.name AS brand_name, " +
                     "p.family_id, f.name AS family_name, p.concentration, p.volume_ml, " +
                     "p.price, p.stock_qty, p.description, p.image_url, p.detail_image_url, " +
-                    "p.active, p.created_at " +
+                    "p.active, p.created_at, p.genero, p.inspiracao, p.status " +
                     "FROM products p " +
                     "INNER JOIN brands b ON b.id = p.brand_id " +
                     "LEFT JOIN fragrance_families f ON f.id = p.family_id " +
