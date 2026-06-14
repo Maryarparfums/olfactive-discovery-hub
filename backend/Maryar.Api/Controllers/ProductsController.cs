@@ -30,10 +30,7 @@ namespace Maryar.Api.Controllers
                     Concentration = p.Concentration,
                     VolumeMl = p.VolumeMl,
                     Price = p.Price,
-                    ImageUrl = p.ImageUrl,
-                    Status = p.Status,
-                    Genero = p.Genero,
-                    Inspiracao = p.Inspiracao
+                    ImageUrl = p.ImageUrl
                 })
                 .ToList();
 
@@ -83,7 +80,10 @@ namespace Maryar.Api.Controllers
                     dto.Fixacao      = d.Fixacao;
                     dto.Projecao     = d.Projecao;
                     dto.DuracaoHoras = d.DuracaoHoras;
-                }
+                    dto.Genero       = d.Genero;
+                    dto.Inspiracao   = d.Inspiracao;
+                    dto.Status       = d.Status;
+                 }
             }
            
             catch (System.Exception ex)
