@@ -20,5 +20,8 @@ namespace Maryar.Api.Models
         public string DetailImageUrl { get; set; }
         public bool Active { get; set; }
         public DateTime CreatedAt { get; set; }
+        public string Genero { get; set; }
+        public string Inspiracao { get; set; }
+        public string Status { get; set; }
     }
 }
