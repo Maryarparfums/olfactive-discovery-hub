@@ -1,63 +1,38 @@
+using System.Linq;
 using System.Web.Http;
+using System.Web.Http.Cors;
 using Maryar.Api.Infrastructure;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
-
 namespace Maryar.Api
 {
     public static class WebApiConfig
     {
         public static void Register(HttpConfiguration config)
         {
+            // CORS - origens permitidas no appSettings (Maryar:CorsOrigins)
+            var origins = AppConfig.Get("Maryar:CorsOrigins") ?? "*";
+            var cors = new EnableCorsAttribute(origins, "*", "*")
+            {
+                SupportsCredentials = true
+            };
+            config.EnableCors(cors);
+            // JSON: camelCase + ignorar nulos + sem referências circulares
             var json = config.Formatters.JsonFormatter;
             json.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
             json.SerializerSettings.NullValueHandling = NullValueHandling.Ignore;
             json.SerializerSettings.DateFormatHandling = DateFormatHandling.IsoDateFormat;
-            json.SerializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
-
-            config.Formatters.Remove(config.Formatters.XmlFormatter);
+            // Remove XML para simplificar respostas
+            var xml = config.Formatters.XmlFormatter;
+            config.Formatters.Remove(xml);
+            // Filtro global de exceções
             config.Filters.Add(new ApiExceptionFilter());
-
-            // Auth
-            config.Routes.MapHttpRoute(
-                name: "AuthSignUp",
-                routeTemplate: "auth/signup",
-                defaults: new { controller = "Auth", action = "SignUp" }
-            );
-            config.Routes.MapHttpRoute(
-                name: "AuthSignIn",
-                routeTemplate: "auth/signin",
-                defaults: new { controller = "Auth", action = "SignIn" }
-            );
-
-            // Produtos
-            config.Routes.MapHttpRoute(
-                name: "ProductsBySlug",
-                routeTemplate: "products/{slug}",
-                defaults: new { controller = "Products", action = "GetBySlug" }
-            );
-            config.Routes.MapHttpRoute(
-                name: "ProductsList",
-                routeTemplate: "products",
-                defaults: new { controller = "Products" }
-            );
-
-            // Brands e Families
-            config.Routes.MapHttpRoute(
-                name: "BrandsList",
-                routeTemplate: "brands",
-                defaults: new { controller = "Brands" }
-            );
-            config.Routes.MapHttpRoute(
-                name: "FamiliesList",
-                routeTemplate: "families",
-                defaults: new { controller = "Families" }
-            );
-
-            // Fallback genérico
+            // Rotas attribute-based
+            config.MapHttpAttributeRoutes();
+            // Rota fallback
             config.Routes.MapHttpRoute(
                 name: "DefaultApi",
-                routeTemplate: "{controller}/{id}",
+                routeTemplate: "api/{controller}/{id}",
                 defaults: new { id = RouteParameter.Optional }
             );
         }
