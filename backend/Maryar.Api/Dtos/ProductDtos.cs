@@ -14,6 +14,9 @@ namespace Maryar.Api.Dtos
         public int VolumeMl { get; set; }
         public decimal Price { get; set; }
         public string ImageUrl { get; set; }
+        public string Genero { get; set; }
+        public string Inspiracao { get; set; }
+        public string Status { get; set; }
     }
 
     public class ProductDetailDto : ProductListItemDto
@@ -31,6 +34,9 @@ namespace Maryar.Api.Dtos
         public int Projecao { get; set; }
         public string DuracaoHoras { get; set; }
         public List<string> Similares { get; set; }
+        public string Genero { get; set; }
+        public string Inspiracao { get; set; }
+        public string Status { get; set; }
     }
 
     public class ProductQueryDto
@@ -45,5 +51,7 @@ namespace Maryar.Api.Dtos
         public decimal? PrecoMax { get; set; }
         public int Page { get; set; }
         public int PageSize { get; set; }
+        public string Genero { get; set; }
+        public string Status { get; set; }
     }
 }
