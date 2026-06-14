@@ -148,9 +148,21 @@ namespace Maryar.Api.Repositories.MySql
             using (var cmd = cn.CreateCommand())
             {
                 cmd.CommandText =
-                    "SELECT product_id, notas_topo, notas_coracao, notas_base, estacao, " +
-                    "periodo, ocasiao, fixacao, projecao, duracao_horas, similares " +
-                    "FROM perfume_details WHERE product_id = @id LIMIT 1";
+                    @"SELECT
+                        product_id,
+                        CAST(notas_topo AS CHAR) AS notas_topo,
+                        CAST(notas_coracao AS CHAR) AS notas_coracao,
+                        CAST(notas_base AS CHAR) AS notas_base,
+                        CAST(estacao AS CHAR) AS estacao,
+                        CAST(periodo AS CHAR) AS periodo,
+                        CAST(ocasiao AS CHAR) AS ocasiao,
+                        fixacao,
+                        projecao,
+                        duracao_horas,
+                        CAST(similares AS CHAR) AS similares
+                    FROM perfume_details
+                    WHERE product_id = @id
+                    LIMIT 1";
                 cmd.Parameters.AddWithValue("@id", productId.ToString());
                 using (var r = cmd.ExecuteReader())
                 {
