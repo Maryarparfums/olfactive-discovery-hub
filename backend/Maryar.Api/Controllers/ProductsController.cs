@@ -2,19 +2,21 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Web.Http;
 using Maryar.Api.Dtos;
+using Maryar.Api.Models;
 using Maryar.Api.Repositories.Interfaces;
 using Maryar.Api.Repositories.MySql;
 using Newtonsoft.Json;
 
 namespace Maryar.Api.Controllers
 {
+    [RoutePrefix("api/products")]
     public class ProductsController : ApiController
     {
         private readonly IProductRepository _repo;
         public ProductsController() : this(new ProductRepository()) { }
         public ProductsController(IProductRepository repo) { _repo = repo; }
 
-        [HttpGet]
+        [HttpGet, Route("")]
         public IHttpActionResult List([FromUri] ProductQueryDto query)
         {
             if (query == null) query = new ProductQueryDto();
@@ -43,11 +45,12 @@ namespace Maryar.Api.Controllers
             });
         }
 
-        [HttpGet]
+        [HttpGet, Route("{slug}")]
         public IHttpActionResult GetBySlug(string slug)
         {
             var p = _repo.GetBySlug(slug);
             if (p == null) return NotFound();
+            var d = _repo.GetDetailsByProductId(p.Id);
 
             var dto = new ProductDetailDto
             {
@@ -65,33 +68,21 @@ namespace Maryar.Api.Controllers
                 DetailImageUrl = p.DetailImageUrl
             };
 
-            try
+            if (d != null)
             {
-                var d = _repo.GetDetailsByProductId(p.Id);
-                if (d != null)
-                {
-                    dto.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
-                    dto.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
-                    dto.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
-                    dto.Estacao      = Deserialize<Dictionary<string, int>>(d.EstacaoJson);
-                    dto.Periodo      = Deserialize<Dictionary<string, int>>(d.PeriodoJson);
-                    dto.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
-                    dto.Similares    = Deserialize<List<string>>(d.SimilaresJson);
-                    dto.Fixacao      = d.Fixacao;
-                    dto.Projecao     = d.Projecao;
-                    dto.DuracaoHoras = d.DuracaoHoras;
-                }
+                dto.NotasTopo = JsonConvert.DeserializeObject<List<string>>(d.NotasTopoJson);
+                dto.NotasCoracao = JsonConvert.DeserializeObject<List<string>>(d.NotasCoracaoJson);
+                dto.NotasBase = JsonConvert.DeserializeObject<List<string>>(d.NotasBaseJson);
+                dto.Estacao = JsonConvert.DeserializeObject<Dictionary<string, int>>(d.EstacaoJson);
+                dto.Periodo = JsonConvert.DeserializeObject<Dictionary<string, int>>(d.PeriodoJson);
+                dto.Ocasiao = JsonConvert.DeserializeObject<Dictionary<string, int>>(d.OcasiaoJson);
+                dto.Fixacao = d.Fixacao;
+                dto.Projecao = d.Projecao;
+                dto.DuracaoHoras = d.DuracaoHoras;
+                dto.Similares = JsonConvert.DeserializeObject<List<string>>(d.SimilaresJson);
             }
-            catch { }
 
             return Ok(dto);
-        }
-
-        private static T Deserialize<T>(string json) where T : new()
-        {
-            if (string.IsNullOrWhiteSpace(json)) return new T();
-            try { return JsonConvert.DeserializeObject<T>(json); }
-            catch { return new T(); }
         }
     }
 }
