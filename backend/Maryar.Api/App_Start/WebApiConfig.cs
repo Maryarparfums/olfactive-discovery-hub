@@ -10,7 +10,7 @@ namespace Maryar.Api
         public static void Register(HttpConfiguration config)
         {
             var json = config.Formatters.JsonFormatter;
-            json.SerializerSettings.ContractResolver = new DefaultContractResolver();
+            json.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
             json.SerializerSettings.NullValueHandling = NullValueHandling.Ignore;
             json.SerializerSettings.DateFormatHandling = DateFormatHandling.IsoDateFormat;
             json.SerializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
