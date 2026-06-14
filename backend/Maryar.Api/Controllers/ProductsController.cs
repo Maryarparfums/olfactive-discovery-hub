@@ -65,6 +65,12 @@ namespace Maryar.Api.Controllers
                 DetailImageUrl = p.DetailImageUrl
             };
 
+            dto.Fixacao = 99;
+            dto.Projecao = 99;
+            dto.DuracaoHoras = "TESTE";
+            
+            dto.NotasTopo = new List<string> { "Teste" };
+
             try
             {
                 var d = _repo.GetDetailsByProductId(p.Id);
