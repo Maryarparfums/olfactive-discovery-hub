@@ -17,5 +17,8 @@ namespace Maryar.Api.Models
         public int Projecao { get; set; }
         public string DuracaoHoras { get; set; }
         public string SimilaresJson { get; set; } // ["slug1","slug2"]
+        public string Genero { get; set; }
+        public string Inspiracao { get; set; }
+        public string Status { get; set; }
     }
 }
