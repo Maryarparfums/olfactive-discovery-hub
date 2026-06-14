@@ -32,7 +32,7 @@ namespace Maryar.Api.Controllers
                     Price = p.Price,
                     ImageUrl = p.ImageUrl,
                     Status = p.Status,
-                    Genero = p.GenderName,
+                    Genero = p.Genero,
                     Inspiracao = p.Inspiracao
                 })
                 .ToList();
@@ -65,10 +65,7 @@ namespace Maryar.Api.Controllers
                 StockQty = p.StockQty,
                 Description = p.Description,
                 ImageUrl = p.ImageUrl,
-                DetailImageUrl = p.DetailImageUrl,
-                Status = p.Status,
-                Genero = p.Genero,
-                Inspiracao = p.Inspiracao
+                DetailImageUrl = p.DetailImageUrl
             };
 
             try
