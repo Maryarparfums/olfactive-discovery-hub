@@ -36,7 +36,10 @@ namespace Maryar.Api.Repositories.MySql
                 ImageUrl = r["image_url"] == DBNull.Value ? null : r["image_url"].ToString(),
                 DetailImageUrl = r["detail_image_url"] == DBNull.Value ? null : r["detail_image_url"].ToString(),
                 Active = Convert.ToBoolean(r["active"]),
-                CreatedAt = Convert.ToDateTime(r["created_at"])
+                CreatedAt = Convert.ToDateTime(r["created_at"]),
+                Genero = r["genero"] == DBNull.Value ? null : r["genero"].ToString(),
+                Inspiracao = r["inspiracao"] == DBNull.Value ? null : r["inspiracao"].ToString(),
+                Status = r["status"] == DBNull.Value ? null : r["status"].ToString()
             };
         }
 
