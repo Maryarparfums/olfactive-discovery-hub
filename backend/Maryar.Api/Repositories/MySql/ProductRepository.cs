@@ -159,7 +159,10 @@ namespace Maryar.Api.Repositories.MySql
                         fixacao,
                         projecao,
                         duracao_horas,
-                        CAST(similares AS CHAR) AS similares
+                        CAST(similares AS CHAR) AS similares,
+                        genero,
+                        inspiracao,
+                        status
                     FROM perfume_details
                     WHERE product_id = @id
                     LIMIT 1";
@@ -179,7 +182,10 @@ namespace Maryar.Api.Repositories.MySql
                         Fixacao = r["fixacao"] == DBNull.Value ? 0 : Convert.ToInt32(r["fixacao"]),
                         Projecao = r["projecao"] == DBNull.Value ? 0 : Convert.ToInt32(r["projecao"]),
                         DuracaoHoras = r["duracao_horas"] == DBNull.Value ? null : r["duracao_horas"].ToString(),
-                        SimilaresJson = r["similares"] == DBNull.Value ? "[]" : r["similares"].ToString()
+                        SimilaresJson = r["similares"] == DBNull.Value ? "[]" : r["similares"].ToString(),
+                        Genero = r["genero"] == DBNull.Value ? null : r["genero"].ToString(),
+                        Inspiracao = r["inspiracao"] == DBNull.Value ? null : r["inspiracao"].ToString(),
+                        Status = r["status"] == DBNull.Value ? null : r["status"].ToString()
                     };
                 }
             }
