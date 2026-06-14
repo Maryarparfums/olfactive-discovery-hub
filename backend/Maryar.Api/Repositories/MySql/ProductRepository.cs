@@ -36,10 +36,7 @@ namespace Maryar.Api.Repositories.MySql
                 ImageUrl = r["image_url"] == DBNull.Value ? null : r["image_url"].ToString(),
                 DetailImageUrl = r["detail_image_url"] == DBNull.Value ? null : r["detail_image_url"].ToString(),
                 Active = Convert.ToBoolean(r["active"]),
-                CreatedAt = Convert.ToDateTime(r["created_at"]),
-                Genero = r["genero"] == DBNull.Value ? null : r["genero"].ToString(),
-                Inspiracao = r["inspiracao"] == DBNull.Value ? null : r["inspiracao"].ToString(),
-                Status = r["status"] == DBNull.Value ? null : r["status"].ToString()
+                CreatedAt = Convert.ToDateTime(r["created_at"])
             };
         }
 
@@ -105,7 +102,7 @@ namespace Maryar.Api.Repositories.MySql
                         "SELECT p.id, p.slug, p.name, p.brand_id, b.name AS brand_name, " +
                         "p.family_id, f.name AS family_name, p.concentration, p.volume_ml, " +
                         "p.price, p.stock_qty, p.description, p.image_url, p.detail_image_url, " +
-                        "p.active, p.created_at, p.genero, p.inspiracao, p.status " + baseFrom + where +
+                        "p.active, p.created_at " + baseFrom + where +
                         " ORDER BY p.created_at DESC LIMIT @limit OFFSET @offset";
                     foreach (var p in parameters)
                         cmd.Parameters.Add(new MySqlParameter(p.ParameterName, p.Value));
@@ -128,7 +125,7 @@ namespace Maryar.Api.Repositories.MySql
                     "SELECT p.id, p.slug, p.name, p.brand_id, b.name AS brand_name, " +
                     "p.family_id, f.name AS family_name, p.concentration, p.volume_ml, " +
                     "p.price, p.stock_qty, p.description, p.image_url, p.detail_image_url, " +
-                    "p.active, p.created_at, p.genero, p.inspiracao, p.status " +
+                    "p.active, p.created_at " +
                     "FROM products p " +
                     "INNER JOIN brands b ON b.id = p.brand_id " +
                     "LEFT JOIN fragrance_families f ON f.id = p.family_id " +
