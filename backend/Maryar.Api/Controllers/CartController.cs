@@ -125,5 +125,34 @@ namespace Maryar.Api.Controllers
             _carts.Clear(cartId);
             return Ok(BuildDto(cartId));
         }
+
+        // Aliases POST — hospedagem compartilhada Locaweb bloqueia PUT/DELETE no IIS
+        [HttpPost, Route("items/{itemId:guid}/update")]
+        public IHttpActionResult UpdateItemPost(Guid itemId, [FromBody] UpdateItemRequest req)
+        {
+            if (req == null || req.Quantity < 0)
+                return Content(HttpStatusCode.BadRequest, new { error = "Quantidade inválida." });
+
+            var cartId = ResolveCartId();
+            if (req.Quantity == 0) _carts.RemoveItem(itemId);
+            else _carts.UpdateItemQty(itemId, req.Quantity);
+            return Ok(BuildDto(cartId));
+        }
+
+        [HttpPost, Route("items/{itemId:guid}/remove")]
+        public IHttpActionResult RemoveItemPost(Guid itemId)
+        {
+            var cartId = ResolveCartId();
+            _carts.RemoveItem(itemId);
+            return Ok(BuildDto(cartId));
+        }
+
+        [HttpPost, Route("clear")]
+        public IHttpActionResult ClearPost()
+        {
+            var cartId = ResolveCartId();
+            _carts.Clear(cartId);
+            return Ok(BuildDto(cartId));
+        }
     }
 }
