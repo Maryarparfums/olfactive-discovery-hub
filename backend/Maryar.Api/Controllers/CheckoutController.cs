@@ -67,7 +67,6 @@ namespace Maryar.Api.Controllers
             if (cartItems.Count == 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
 
-            // Recalcula tudo no servidor com preços autoritativos.
             var productsById = cartItems
                 .Select(ci => _products.GetById(ci.ProductId))
                 .Where(p => p != null)
@@ -147,6 +146,25 @@ namespace Maryar.Api.Controllers
             }
 
             return Ok(response);
+        }
+
+        [HttpGet, Route("orders")]
+        public IHttpActionResult GetMyOrders()
+        {
+            var userId = JwtAuthAttribute.CurrentUserId();
+            string token = null;
+            var ctx = HttpContext.Current;
+            if (ctx != null)
+            {
+                var c = ctx.Request.Cookies[CookieName];
+                token = c != null ? c.Value : null;
+            }
+
+            if (!userId.HasValue && string.IsNullOrEmpty(token))
+                return Ok(new List<object>());
+
+            var orders = _orders.GetByUserOrToken(userId, token);
+            return Ok(orders);
         }
 
         [HttpGet, Route("orders/{id:guid}")]
