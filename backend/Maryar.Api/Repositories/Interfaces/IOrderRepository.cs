@@ -9,6 +9,7 @@ namespace Maryar.Api.Repositories.Interfaces
         Guid Create(Order order, IEnumerable<OrderItem> items);
         Order GetById(Guid id);
         Order GetByChargeId(string chargeId);
+        IEnumerable<Order> GetByUserOrToken(Guid? userId, string guestToken);
         IEnumerable<OrderItem> GetItems(Guid orderId);
         void UpdatePaymentInfo(Guid orderId, string chargeId, string pixQr, string pixCopy);
         void UpdatePaymentStatus(Guid orderId, string paymentStatus, string orderStatus);
