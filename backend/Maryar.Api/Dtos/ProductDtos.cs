@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-
 namespace Maryar.Api.Dtos
 {
     public class ProductListItemDto
@@ -14,31 +13,26 @@ namespace Maryar.Api.Dtos
         public int VolumeMl { get; set; }
         public decimal Price { get; set; }
         public string ImageUrl { get; set; }
+        public int StockQty { get; set; }
         public string Genero { get; set; }
         public string Inspiracao { get; set; }
         public string Status { get; set; }
-    }
-
-    public class ProductDetailDto : ProductListItemDto
-    {
-        public string Description { get; set; }
-        public string DetailImageUrl { get; set; }
-        public int StockQty { get; set; }
         public List<string> NotasTopo { get; set; }
         public List<string> NotasCoracao { get; set; }
         public List<string> NotasBase { get; set; }
         public Dictionary<string, int> Estacao { get; set; }
         public Dictionary<string, int> Periodo { get; set; }
         public Dictionary<string, int> Ocasiao { get; set; }
+    }
+    public class ProductDetailDto : ProductListItemDto
+    {
+        public string Description { get; set; }
+        public string DetailImageUrl { get; set; }
         public int Fixacao { get; set; }
         public int Projecao { get; set; }
         public string DuracaoHoras { get; set; }
         public List<string> Similares { get; set; }
-        public string Genero { get; set; }
-        public string Inspiracao { get; set; }
-        public string Status { get; set; }
     }
-
     public class ProductQueryDto
     {
         public string Familia { get; set; }
