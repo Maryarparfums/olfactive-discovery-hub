@@ -99,6 +99,74 @@ namespace Maryar.Api.Repositories.MySql
         public Order GetById(Guid id) => GetBy("id = @id", "@id", id.ToString());
         public Order GetByChargeId(string chargeId) => GetBy("infinitepay_charge_id = @cid", "@cid", chargeId);
 
+        public IEnumerable<Order> GetByUserOrToken(Guid? userId, string guestToken)
+        {
+            var list = new List<Order>();
+
+            // Sem identificação: retorna vazio
+            if (!userId.HasValue && string.IsNullOrEmpty(guestToken))
+                return list;
+
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                if (userId.HasValue)
+                {
+                    cmd.CommandText = @"
+                        SELECT * FROM orders 
+                        WHERE user_id = @uid 
+                        ORDER BY created_at DESC";
+                    cmd.Parameters.AddWithValue("@uid", userId.Value.ToString());
+                }
+                else
+                {
+                    // Pedidos anônimos: busca pelo e-mail do cliente via cookie de carrinho
+                    // Como não temos guest_token na tabela, buscamos pelo customer_email
+                    // armazenado no pedido mais recente do cookie de sessão.
+                    // Por ora retorna lista vazia para usuários não autenticados.
+                    return list;
+                }
+
+                using (var r = cmd.ExecuteReader())
+                {
+                    while (r.Read())
+                    {
+                        list.Add(new Order
+                        {
+                            Id = Guid.Parse(r["id"].ToString()),
+                            OrderNumber = r["order_number"].ToString(),
+                            UserId = r["user_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["user_id"].ToString()),
+                            CustomerName = r["customer_name"].ToString(),
+                            CustomerEmail = r["customer_email"].ToString(),
+                            CustomerDocument = r["customer_document"] == DBNull.Value ? null : r["customer_document"].ToString(),
+                            CustomerPhone = r["customer_phone"] == DBNull.Value ? null : r["customer_phone"].ToString(),
+                            ShippingZip = r["shipping_zip"].ToString(),
+                            ShippingStreet = r["shipping_street"].ToString(),
+                            ShippingNumber = r["shipping_number"].ToString(),
+                            ShippingComplement = r["shipping_complement"] == DBNull.Value ? null : r["shipping_complement"].ToString(),
+                            ShippingNeighborhood = r["shipping_neighborhood"].ToString(),
+                            ShippingCity = r["shipping_city"].ToString(),
+                            ShippingState = r["shipping_state"].ToString(),
+                            Subtotal = Convert.ToDecimal(r["subtotal"]),
+                            ShippingFee = Convert.ToDecimal(r["shipping_fee"]),
+                            Discount = Convert.ToDecimal(r["discount"]),
+                            Total = Convert.ToDecimal(r["total"]),
+                            PaymentMethod = r["payment_method"].ToString(),
+                            PaymentStatus = r["payment_status"].ToString(),
+                            OrderStatus = r["order_status"].ToString(),
+                            InfinitePayChargeId = r["infinitepay_charge_id"] == DBNull.Value ? null : r["infinitepay_charge_id"].ToString(),
+                            PixQrCode = r["pix_qr_code"] == DBNull.Value ? null : r["pix_qr_code"].ToString(),
+                            PixCopyPaste = r["pix_copy_paste"] == DBNull.Value ? null : r["pix_copy_paste"].ToString(),
+                            CreatedAt = Convert.ToDateTime(r["created_at"]),
+                            UpdatedAt = Convert.ToDateTime(r["updated_at"])
+                        });
+                    }
+                }
+            }
+
+            return list;
+        }
+
         private Order GetBy(string where, string p, object v)
         {
             using (var cn = _factory.Create())
