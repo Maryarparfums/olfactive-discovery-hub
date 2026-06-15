@@ -43,27 +43,49 @@ namespace Maryar.Api.Controllers
             });
         }
 
-        [HttpGet]
-        public IHttpActionResult GetBySlug(string slug)
+       [HttpGet]
+        public IHttpActionResult List([FromUri] ProductQueryDto query)
         {
-            var p = _repo.GetBySlug(slug);
-            if (p == null) return NotFound();
-
-            var dto = new ProductDetailDto
+            if (query == null) query = new ProductQueryDto();
+            int total;
+            var products = _repo.Query(query, out total).ToList();
+            var items = products.Select(p =>
             {
-                Id = p.Id,
-                Slug = p.Slug,
-                Name = p.Name,
-                Brand = p.BrandName,
-                Family = p.FamilyName,
-                Concentration = p.Concentration,
-                VolumeMl = p.VolumeMl,
-                Price = p.Price,
-                StockQty = p.StockQty,
-                Description = p.Description,
-                ImageUrl = p.ImageUrl,
-                DetailImageUrl = p.DetailImageUrl
-            };
+                var item = new ProductListItemDto
+                {
+                    Id            = p.Id,
+                    Slug          = p.Slug,
+                    Name          = p.Name,
+                    Brand         = p.BrandName,
+                    Family        = p.FamilyName,
+                    Concentration = p.Concentration,
+                    VolumeMl      = p.VolumeMl,
+                    Price         = p.Price,
+                    ImageUrl      = p.ImageUrl,
+                    StockQty      = p.StockQty
+                };
+                var d = _repo.GetDetailsByProductId(p.Id);
+                if (d != null)
+                {
+                    item.Genero       = d.Genero;
+                    item.Status       = d.Status;
+                    item.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
+                    item.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
+                    item.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
+                    item.Estacao      = Deserialize<Dictionary<string, int>>(d.EstacaoJson);
+                    item.Periodo      = Deserialize<Dictionary<string, int>>(d.PeriodoJson);
+                    item.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
+                }
+                return item;
+            }).ToList();
+            return Ok(new
+            {
+                total,
+                page     = query.Page < 1 ? 1 : query.Page,
+                pageSize = query.PageSize < 1 ? 24 : query.PageSize,
+                items
+            });
+        }
 
             try
             {
