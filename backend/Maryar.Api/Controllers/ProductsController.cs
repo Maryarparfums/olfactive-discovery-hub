@@ -5,7 +5,6 @@ using Maryar.Api.Dtos;
 using Maryar.Api.Repositories.Interfaces;
 using Maryar.Api.Repositories.MySql;
 using Newtonsoft.Json;
-
 namespace Maryar.Api.Controllers
 {
     public class ProductsController : ApiController
@@ -13,37 +12,7 @@ namespace Maryar.Api.Controllers
         private readonly IProductRepository _repo;
         public ProductsController() : this(new ProductRepository()) { }
         public ProductsController(IProductRepository repo) { _repo = repo; }
-
         [HttpGet]
-        public IHttpActionResult List([FromUri] ProductQueryDto query)
-        {
-            if (query == null) query = new ProductQueryDto();
-            int total;
-            var items = _repo.Query(query, out total)
-                .Select(p => new ProductListItemDto
-                {
-                    Id = p.Id,
-                    Slug = p.Slug,
-                    Name = p.Name,
-                    Brand = p.BrandName,
-                    Family = p.FamilyName,
-                    Concentration = p.Concentration,
-                    VolumeMl = p.VolumeMl,
-                    Price = p.Price,
-                    ImageUrl = p.ImageUrl
-                })
-                .ToList();
-
-            return Ok(new
-            {
-                total,
-                page = query.Page < 1 ? 1 : query.Page,
-                pageSize = query.PageSize < 1 ? 24 : query.PageSize,
-                items
-            });
-        }
-
-       [HttpGet]
         public IHttpActionResult List([FromUri] ProductQueryDto query)
         {
             if (query == null) query = new ProductQueryDto();
@@ -69,6 +38,7 @@ namespace Maryar.Api.Controllers
                 {
                     item.Genero       = d.Genero;
                     item.Status       = d.Status;
+                    item.Inspiracao   = d.Inspiracao;
                     item.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
                     item.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
                     item.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
@@ -86,7 +56,26 @@ namespace Maryar.Api.Controllers
                 items
             });
         }
-
+        [HttpGet]
+        public IHttpActionResult GetBySlug(string slug)
+        {
+            var p = _repo.GetBySlug(slug);
+            if (p == null) return NotFound();
+            var dto = new ProductDetailDto
+            {
+                Id            = p.Id,
+                Slug          = p.Slug,
+                Name          = p.Name,
+                Brand         = p.BrandName,
+                Family        = p.FamilyName,
+                Concentration = p.Concentration,
+                VolumeMl      = p.VolumeMl,
+                Price         = p.Price,
+                StockQty      = p.StockQty,
+                Description   = p.Description,
+                ImageUrl      = p.ImageUrl,
+                DetailImageUrl = p.DetailImageUrl
+            };
             try
             {
                 var d = _repo.GetDetailsByProductId(p.Id);
@@ -105,17 +94,14 @@ namespace Maryar.Api.Controllers
                     dto.Genero       = d.Genero;
                     dto.Inspiracao   = d.Inspiracao;
                     dto.Status       = d.Status;
-                 }
+                }
             }
-           
             catch (System.Exception ex)
             {
                 dto.Description += "\n\nERRO: " + ex.ToString();
             }
-
             return Ok(dto);
         }
-
         private static T Deserialize<T>(string json) where T : new()
         {
             if (string.IsNullOrWhiteSpace(json)) return new T();
