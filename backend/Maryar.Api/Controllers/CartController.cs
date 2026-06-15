@@ -99,7 +99,7 @@ namespace Maryar.Api.Controllers
         }
 
         [HttpPut, Route("items/{itemId:guid}")]
-        public IHttpActionResult UpdateItem(Guid itemId, [FromBody] UpdateItemRequest req)
+		public IHttpActionResult UpdateItem(Guid itemId, [FromBody] UpdateItemByIdRequest req)
         {
             if (req == null || req.Quantity < 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Quantidade inválida." });
@@ -149,13 +149,6 @@ namespace Maryar.Api.Controllers
             return Ok(BuildDto(cartId));
         }
         
-        [HttpPost, Route("clear")]
-        public IHttpActionResult ClearPost()
-        {
-            var cartId = ResolveCartId();
-            _carts.Clear(cartId);
-            return Ok(BuildDto(cartId));
-        }
         [HttpPost, Route("clear")]
         public IHttpActionResult ClearPost()
         {
