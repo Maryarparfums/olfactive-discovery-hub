@@ -11,7 +11,7 @@ using Maryar.Api.Repositories.MySql;
 
 namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("api/cart")]
+    [RoutePrefix("cart")]
     public class CartController : ApiController
     {
         private const string CookieName = "maryar_cart";
@@ -99,7 +99,7 @@ namespace Maryar.Api.Controllers
         }
 
         [HttpPut, Route("items/{itemId:guid}")]
-		public IHttpActionResult UpdateItem(Guid itemId, [FromBody] UpdateItemByIdRequest req)
+        public IHttpActionResult UpdateItem(Guid itemId, [FromBody] UpdateItemByIdRequest req)
         {
             if (req == null || req.Quantity < 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Quantidade inválida." });
@@ -131,24 +131,24 @@ namespace Maryar.Api.Controllers
         {
             if (req == null || req.Quantity < 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Quantidade inválida." });
-        
+
             var cartId = ResolveCartId();
             if (req.Quantity == 0) _carts.RemoveItem(req.ItemId);
             else _carts.UpdateItemQty(req.ItemId, req.Quantity);
             return Ok(BuildDto(cartId));
         }
-        
+
         [HttpPost, Route("remove-item")]
         public IHttpActionResult RemoveItemPost([FromBody] RemoveItemByIdRequest req)
         {
             if (req == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados inválidos." });
-        
+
             var cartId = ResolveCartId();
             _carts.RemoveItem(req.ItemId);
             return Ok(BuildDto(cartId));
         }
-        
+
         [HttpPost, Route("clear")]
         public IHttpActionResult ClearPost()
         {
