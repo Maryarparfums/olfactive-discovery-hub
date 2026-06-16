@@ -14,7 +14,7 @@ using Maryar.Api.Services;
 
 namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("api/checkout")]
+    [RoutePrefix("checkout")]
     public class CheckoutController : ApiController
     {
         private const string CookieName = "maryar_cart";
@@ -53,12 +53,6 @@ namespace Maryar.Api.Controllers
             if (req == null || req.Customer == null || req.Shipping == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
 
-            if (req.PaymentMethod != "pix" && req.PaymentMethod != "credit_card")
-                return Content(HttpStatusCode.BadRequest, new { error = "Método de pagamento inválido." });
-
-            if (req.PaymentMethod == "credit_card" && string.IsNullOrWhiteSpace(req.CardToken))
-                return Content(HttpStatusCode.BadRequest, new { error = "Token de cartão obrigatório." });
-
             var cartId = ResolveCartId();
             if (!cartId.HasValue)
                 return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
@@ -77,10 +71,12 @@ namespace Maryar.Api.Controllers
                 return Content(HttpStatusCode.BadRequest, new { error = "Não foi possível calcular o total." });
 
             var orderId = Guid.NewGuid();
+            var orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+
             var order = new Order
             {
                 Id = orderId,
-                OrderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss"),
+                OrderNumber = orderNumber,
                 UserId = JwtAuthAttribute.CurrentUserId(),
                 CustomerName = req.Customer.Name,
                 CustomerEmail = req.Customer.Email,
@@ -97,55 +93,62 @@ namespace Maryar.Api.Controllers
                 ShippingFee = pricing.ShippingFee,
                 Discount = pricing.Discount,
                 Total = pricing.Total,
-                PaymentMethod = req.PaymentMethod,
+                PaymentMethod = "infinitepay",
                 PaymentStatus = "pending",
                 OrderStatus = "created"
             };
             foreach (var it in pricing.Items) it.OrderId = orderId;
             _orders.Create(order, pricing.Items);
 
-            var response = new CheckoutResponse
-            {
-                OrderId = orderId,
-                OrderNumber = order.OrderNumber,
-                PaymentStatus = "pending"
-            };
-
             try
             {
-                if (req.PaymentMethod == "pix")
+                var baseUrl = "https://maryar.com.br";
+                var redirectUrl = $"{baseUrl}/pedido/{orderId}";
+                var webhookUrl = $"{baseUrl}/api/checkout/webhook";
+
+                var linkItems = pricing.Items.Select(i => new InfinitePayLinkItem
                 {
-                    var pix = await _infinite.CreatePixChargeAsync(order);
-                    _orders.UpdatePaymentInfo(orderId, pix.ChargeId, pix.QrCode, pix.CopyPaste);
-                    response.PixQrCode = pix.QrCode;
-                    response.PixCopyPaste = pix.CopyPaste;
-                    response.Message = "Aguardando pagamento PIX.";
-                }
-                else
+                    Quantity = i.Quantity,
+                    Price = (int)Math.Round(i.UnitPrice * 100),
+                    Description = i.ProductName ?? "Perfume"
+                }).ToList();
+
+                var paymentUrl = await _infinite.CreatePaymentLinkAsync(
+                    orderNumber, linkItems, redirectUrl, webhookUrl,
+                    req.Customer, req.Shipping);
+
+                return Ok(new
                 {
-                    var card = await _infinite.CreateCardChargeAsync(order, req.CardToken, req.Installments);
-                    _orders.UpdatePaymentInfo(orderId, card.ChargeId, null, null);
-                    if (string.Equals(card.Status, "approved", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _orders.UpdatePaymentStatus(orderId, "paid", "paid");
-                        response.PaymentStatus = "paid";
-                        _carts.Clear(cartId.Value);
-                    }
-                    else
-                    {
-                        _orders.UpdatePaymentStatus(orderId, "failed", "canceled");
-                        response.PaymentStatus = "failed";
-                    }
-                    response.Message = card.Message;
-                }
+                    orderId,
+                    orderNumber,
+                    paymentUrl
+                });
             }
             catch (Exception ex)
             {
                 _orders.UpdatePaymentStatus(orderId, "failed", "canceled");
-                return Content(HttpStatusCode.BadGateway, new { error = "Falha no provedor: " + ex.Message });
+                return Content(HttpStatusCode.BadGateway, new { error = "Falha ao gerar link: " + ex.Message });
             }
+        }
 
-            return Ok(response);
+        [HttpPost, Route("webhook")]
+        public IHttpActionResult Webhook([FromBody] InfinitePayWebhookPayload payload)
+        {
+            if (payload == null || string.IsNullOrEmpty(payload.OrderNsu))
+                return BadRequest();
+
+            try
+            {
+                var order = _orders.GetByOrderNumber(payload.OrderNsu);
+                if (order == null) return BadRequest();
+
+                _orders.UpdatePaymentStatus(order.Id, "paid", "confirmed");
+                return Ok();
+            }
+            catch
+            {
+                return BadRequest();
+            }
         }
 
         [HttpGet, Route("orders")]
@@ -159,7 +162,6 @@ namespace Maryar.Api.Controllers
                 var c = ctx.Request.Cookies[CookieName];
                 token = c != null ? c.Value : null;
             }
-
             if (!userId.HasValue && string.IsNullOrEmpty(token))
                 return Ok(new List<object>());
 
