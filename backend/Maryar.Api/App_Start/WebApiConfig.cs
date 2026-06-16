@@ -18,6 +18,8 @@ namespace Maryar.Api
             config.Formatters.Remove(config.Formatters.XmlFormatter);
             config.Filters.Add(new ApiExceptionFilter());
 
+            config.MapHttpAttributeRoutes(); 
+
             // Auth
             config.Routes.MapHttpRoute(
                 name: "AuthSignUp",
