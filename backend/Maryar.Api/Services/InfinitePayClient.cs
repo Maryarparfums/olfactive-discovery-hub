@@ -38,13 +38,13 @@ namespace Maryar.Api.Services
         private const string Handle = "mariana-martins-f98";
         private static readonly HttpClient _http = new HttpClient();
 
-        public async Task<string> CreatePaymentLinkAsync(
-            string orderNsu,
-            List<InfinitePayLinkItem> items,
-            string redirectUrl,
-            string webhookUrl,
-            CustomerRequest customer,
-            ShippingRequest shipping)
+       public async Task<string> CreatePaymentLinkAsync(
+        string orderNsu,
+        List<InfinitePayLinkItem> items,
+        string redirectUrl,
+        string webhookUrl,
+        CustomerDto customer,
+        ShippingAddressDto shipping)
         {
             var payload = new
             {
