@@ -63,7 +63,8 @@ namespace Maryar.Api.Services
                 {
                     name = customer.Name,
                     email = customer.Email,
-                    phone_number = customer.Phone
+                    phone_number = customer.Phone,
+                    tax_id = (customer.Document ?? "").Replace(".", "").Replace("-", "")
                 },
                 address = new
                 {
