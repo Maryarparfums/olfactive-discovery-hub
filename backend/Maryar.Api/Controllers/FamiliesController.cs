@@ -4,7 +4,7 @@ using Maryar.Api.Repositories.MySql;
 
 namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("api/families")]
+    [RoutePrefix("families")]
     public class FamiliesController : ApiController
     {
         private readonly IFamilyRepository _repo;
