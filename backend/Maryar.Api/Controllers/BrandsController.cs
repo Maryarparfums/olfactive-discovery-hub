@@ -4,7 +4,7 @@ using Maryar.Api.Repositories.MySql;
 
 namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("brands")]
+    [RoutePrefix("api/brands")]
     public class BrandsController : ApiController
     {
         private readonly IBrandRepository _repo;
