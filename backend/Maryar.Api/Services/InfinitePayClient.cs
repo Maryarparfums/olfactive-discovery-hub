@@ -50,7 +50,8 @@ namespace Maryar.Api.Services
             {
                 handle = Handle,
                 order_nsu = orderNsu,
-                itens = items.Select(i => new
+                
+                items = items.Select(i => new
                 {
                     quantity = i.Quantity,
                     price = i.Price,
