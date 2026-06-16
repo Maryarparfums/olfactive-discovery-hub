@@ -40,4 +40,15 @@ namespace Maryar.Api.Dtos
     {
         public Guid ItemId { get; set; }
     }
+
+    public class UpdateItemByIdRequest
+    {
+        public Guid ItemId { get; set; }
+        public int Quantity { get; set; }
+    }
+    
+    public class RemoveItemByIdRequest
+    {
+        public Guid ItemId { get; set; }
+    }
 }
