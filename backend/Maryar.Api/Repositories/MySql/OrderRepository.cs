@@ -99,6 +99,8 @@ namespace Maryar.Api.Repositories.MySql
         public Order GetById(Guid id) => GetBy("id = @id", "@id", id.ToString());
         public Order GetByChargeId(string chargeId) => GetBy("infinitepay_charge_id = @cid", "@cid", chargeId);
 
+        public Order GetByOrderNumber(string orderNumber) => GetBy("order_number = @num", "@num", orderNumber);
+
         public IEnumerable<Order> GetByUserOrToken(Guid? userId, string guestToken)
         {
             var list = new List<Order>();
