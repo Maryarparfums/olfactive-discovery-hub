@@ -4,6 +4,10 @@ namespace Maryar.Api.Infrastructure
 {
     public static class AppConfig
     {
+        public static string JwtSecret => ConfigurationManager.AppSettings["JwtSecret"];
+        public static string AsaasApiKey => ConfigurationManager.AppSettings["AsaasApiKey"];
+        }
+                
         public static string Get(string key)
         {
             return ConfigurationManager.AppSettings[key];
