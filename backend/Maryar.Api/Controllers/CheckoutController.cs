@@ -18,19 +18,19 @@ namespace Maryar.Api.Controllers
     public class CheckoutController : ApiController
     {
         private const string CookieName = "maryar_cart";
-        private readonly ICartRepository _carts;
+        private readonly ICartRepository    _carts;
         private readonly IProductRepository _products;
-        private readonly IOrderRepository _orders;
-        private readonly InfinitePayClient _infinite;
+        private readonly IOrderRepository   _orders;
+        private readonly AsaasClient        _asaas;
 
         public CheckoutController()
             : this(new CartRepository(), new ProductRepository(),
-                   new OrderRepository(), new InfinitePayClient()) { }
+                   new OrderRepository(), new AsaasClient()) { }
 
         public CheckoutController(ICartRepository carts, IProductRepository products,
-                                  IOrderRepository orders, InfinitePayClient infinite)
+                                  IOrderRepository orders, AsaasClient asaas)
         {
-            _carts = carts; _products = products; _orders = orders; _infinite = infinite;
+            _carts = carts; _products = products; _orders = orders; _asaas = asaas;
         }
 
         private Guid? ResolveCartId()
@@ -41,7 +41,7 @@ namespace Maryar.Api.Controllers
             if (ctx != null)
             {
                 var c = ctx.Request.Cookies[CookieName];
-                token = c != null ? c.Value : null;
+                token = c?.Value;
             }
             if (!userId.HasValue && string.IsNullOrEmpty(token)) return null;
             return _carts.GetOrCreate(userId, token).Id;
@@ -50,8 +50,12 @@ namespace Maryar.Api.Controllers
         [HttpPost, Route("")]
         public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
         {
-            if (req == null || req.Customer == null || req.Shipping == null)
+            if (req?.Customer == null || req.Shipping == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
+
+            var method = (req.PaymentMethod ?? "pix").ToLower();
+            if (method == "credit_card" && req.CreditCard == null)
+                return Content(HttpStatusCode.BadRequest, new { error = "Dados do cartão ausentes." });
 
             var cartId = ResolveCartId();
             if (!cartId.HasValue)
@@ -70,85 +74,99 @@ namespace Maryar.Api.Controllers
             if (pricing.Total <= 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Não foi possível calcular o total." });
 
-            var orderId = Guid.NewGuid();
+            var orderId     = Guid.NewGuid();
             var orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
 
             var order = new Order
             {
-                Id = orderId,
-                OrderNumber = orderNumber,
-                UserId = JwtAuthAttribute.CurrentUserId(),
-                CustomerName = req.Customer.Name,
-                CustomerEmail = req.Customer.Email,
-                CustomerDocument = req.Customer.Document,
-                CustomerPhone = req.Customer.Phone,
-                ShippingZip = req.Shipping.Zip,
-                ShippingStreet = req.Shipping.Street,
-                ShippingNumber = req.Shipping.Number,
+                Id                 = orderId,
+                OrderNumber        = orderNumber,
+                UserId             = JwtAuthAttribute.CurrentUserId(),
+                CustomerName       = req.Customer.Name,
+                CustomerEmail      = req.Customer.Email,
+                CustomerDocument   = req.Customer.Document,
+                CustomerPhone      = req.Customer.Phone,
+                ShippingZip        = req.Shipping.Zip,
+                ShippingStreet     = req.Shipping.Street,
+                ShippingNumber     = req.Shipping.Number,
                 ShippingComplement = req.Shipping.Complement,
                 ShippingNeighborhood = req.Shipping.Neighborhood,
-                ShippingCity = req.Shipping.City,
-                ShippingState = req.Shipping.State,
-                Subtotal = pricing.Subtotal,
-                ShippingFee = pricing.ShippingFee,
-                Discount = pricing.Discount,
-                Total = pricing.Total,
-                PaymentMethod = "infinitepay",
-                PaymentStatus = "pending",
-                OrderStatus = "created"
+                ShippingCity       = req.Shipping.City,
+                ShippingState      = req.Shipping.State,
+                Subtotal           = pricing.Subtotal,
+                ShippingFee        = pricing.ShippingFee,
+                Discount           = pricing.Discount,
+                Total              = pricing.Total,
+                PaymentMethod      = method,
+                PaymentStatus      = "pending",
+                OrderStatus        = "created"
             };
             foreach (var it in pricing.Items) it.OrderId = orderId;
             _orders.Create(order, pricing.Items);
 
             try
             {
-                var baseUrl = "https://maryar.com.br";
-                var redirectUrl = $"{baseUrl}/pedido/{orderId}";
-                var webhookUrl = $"{baseUrl}/api/checkout/webhook";
+                var customerId = await _asaas.GetOrCreateCustomerAsync(req.Customer);
 
-                var linkItems = pricing.Items.Select(i => new InfinitePayLinkItem
+                if (method == "pix")
                 {
-                    Quantity = i.Quantity,
-                    Price = (int)Math.Round(i.UnitPrice * 100),
-                    Description = i.ProductName ?? "Perfume"
-                }).ToList();
+                    var pix = await _asaas.CreatePixAsync(customerId, pricing.Total, orderNumber);
+                    _orders.UpdatePaymentReference(orderId, pix.PaymentId);
 
-                var paymentUrl = await _infinite.CreatePaymentLinkAsync(
-                    orderNumber, linkItems, redirectUrl, webhookUrl,
-                    req.Customer, req.Shipping);
-
-                return Ok(new
+                    return Ok(new CheckoutResponse
+                    {
+                        OrderId       = orderId,
+                        OrderNumber   = orderNumber,
+                        PaymentStatus = "pending",
+                        PixQrCode     = pix.QrCodeImage,
+                        PixCopyPaste  = pix.QrCodeText,
+                        Message       = "PIX gerado com sucesso."
+                    });
+                }
+                else // credit_card
                 {
-                    orderId,
-                    orderNumber,
-                    paymentUrl
-                });
+                    var installments = req.Installments < 1 ? 1 : req.Installments;
+                    var card = await _asaas.CreateCreditCardAsync(
+                        customerId, pricing.Total, orderNumber,
+                        installments, req.CreditCard, req.Customer, req.Shipping);
+
+                    _orders.UpdatePaymentReference(orderId, card.PaymentId);
+
+                    var status = card.Status == "CONFIRMED" ? "paid" : "pending";
+                    if (status == "paid")
+                        _orders.UpdatePaymentStatus(orderId, "paid", "confirmed");
+
+                    return Ok(new CheckoutResponse
+                    {
+                        OrderId       = orderId,
+                        OrderNumber   = orderNumber,
+                        PaymentStatus = status,
+                        Message       = status == "paid" ? "Pagamento aprovado!" : "Pagamento em análise."
+                    });
+                }
             }
             catch (Exception ex)
             {
                 _orders.UpdatePaymentStatus(orderId, "failed", "canceled");
-                return Content(HttpStatusCode.BadGateway, new { error = "Falha ao gerar link: " + ex.Message });
+                return Content(HttpStatusCode.BadGateway, new { error = "Falha no pagamento: " + ex.Message });
             }
         }
 
         [HttpPost, Route("webhook")]
-        public IHttpActionResult Webhook([FromBody] InfinitePayWebhookPayload payload)
+        public IHttpActionResult Webhook([FromBody] AsaasWebhookPayload payload)
         {
-            if (payload == null || string.IsNullOrEmpty(payload.OrderNsu))
-                return BadRequest();
-
+            if (payload?.Payment == null) return BadRequest();
             try
             {
-                var order = _orders.GetByOrderNumber(payload.OrderNsu);
-                if (order == null) return BadRequest();
-
-                _orders.UpdatePaymentStatus(order.Id, "paid", "confirmed");
+                if (payload.Event == "PAYMENT_RECEIVED" || payload.Event == "PAYMENT_CONFIRMED")
+                {
+                    var order = _orders.GetByOrderNumber(payload.Payment.ExternalReference);
+                    if (order != null)
+                        _orders.UpdatePaymentStatus(order.Id, "paid", "confirmed");
+                }
                 return Ok();
             }
-            catch
-            {
-                return BadRequest();
-            }
+            catch { return BadRequest(); }
         }
 
         [HttpGet, Route("orders")]
@@ -160,13 +178,12 @@ namespace Maryar.Api.Controllers
             if (ctx != null)
             {
                 var c = ctx.Request.Cookies[CookieName];
-                token = c != null ? c.Value : null;
+                token = c?.Value;
             }
             if (!userId.HasValue && string.IsNullOrEmpty(token))
                 return Ok(new List<object>());
 
-            var orders = _orders.GetByUserOrToken(userId, token);
-            return Ok(orders);
+            return Ok(_orders.GetByUserOrToken(userId, token));
         }
 
         [HttpGet, Route("orders/{id:guid}")]
@@ -174,8 +191,7 @@ namespace Maryar.Api.Controllers
         {
             var o = _orders.GetById(id);
             if (o == null) return NotFound();
-            var items = _orders.GetItems(id);
-            return Ok(new { order = o, items });
+            return Ok(new { order = o, items = _orders.GetItems(id) });
         }
     }
 }
