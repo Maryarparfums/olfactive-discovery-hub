@@ -53,6 +53,10 @@ namespace Maryar.Api.Controllers
             if (req?.Customer == null || req.Shipping == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
 
+            // ← ALTERADO: valida se o cliente escolheu um frete
+            if (req.ShippingOption == null || req.ShippingOption.Price <= 0)
+                return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opção de frete antes de continuar." });
+
             var method = (req.PaymentMethod ?? "pix").ToLower();
             if (method == "credit_card" && req.CreditCard == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados do cartão ausentes." });
@@ -73,6 +77,10 @@ namespace Maryar.Api.Controllers
             var pricing = PricingService.Calculate(cartItems, productsById);
             if (pricing.Total <= 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Não foi possível calcular o total." });
+
+            // ← ALTERADO: usa o frete real dos Correios no lugar do valor fixo
+            pricing.ShippingFee = req.ShippingOption.Price;
+            pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
 
             var orderId     = Guid.NewGuid();
             var orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
@@ -183,7 +191,7 @@ namespace Maryar.Api.Controllers
             if (!userId.HasValue && string.IsNullOrEmpty(token))
                 return Ok(new List<object>());
 
-            return Ok(_orders.GetByUserOrToken(userId, token));
+            return Ok(_orders.GetByUserOrders(userId, token));
         }
 
         [HttpGet, Route("orders/{id:guid}")]
