@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -21,10 +22,6 @@ namespace Maryar.Api.Services
     {
         private static readonly HttpClient _http = new HttpClient();
 
-        // Configure via variáveis de ambiente:
-        // CORREIOS_CARTAO    → número do Cartão de Postagem
-        // CORREIOS_SENHA     → senha do Cartão de Postagem
-        // CORREIOS_CEP_ORIGEM → CEP de onde você posta (agência da cidade vizinha)
         private readonly string _cartao;
         private readonly string _senha;
         private readonly string _cepOrigem;
@@ -43,9 +40,10 @@ namespace Maryar.Api.Services
 
         public CorreiosService()
         {
-            _cartao    = Environment.GetEnvironmentVariable("CORREIOS_CARTAO")     ?? throw new Exception("CORREIOS_CARTAO não configurado");
-            _senha     = Environment.GetEnvironmentVariable("CORREIOS_SENHA")      ?? throw new Exception("CORREIOS_SENHA não configurado");
-            _cepOrigem = Environment.GetEnvironmentVariable("CORREIOS_CEP_ORIGEM") ?? throw new Exception("CORREIOS_CEP_ORIGEM não configurado");
+            // ← ALTERADO: lê do web.config em vez de variáveis de ambiente
+            _cartao    = ConfigurationManager.AppSettings["Correios.Cartao"]    ?? throw new Exception("Correios.Cartao não configurado no web.config");
+            _senha     = ConfigurationManager.AppSettings["Correios.Senha"]     ?? throw new Exception("Correios.Senha não configurado no web.config");
+            _cepOrigem = ConfigurationManager.AppSettings["Correios.CepOrigem"] ?? throw new Exception("Correios.CepOrigem não configurado no web.config");
         }
 
         private async Task<string> GetTokenAsync()
@@ -65,7 +63,7 @@ namespace Maryar.Api.Services
 
             dynamic data = JsonConvert.DeserializeObject(json);
             _cachedToken = (string)data.token;
-            _tokenExpira = DateTime.UtcNow.AddHours(1); // token válido por ~1h
+            _tokenExpira = DateTime.UtcNow.AddHours(1);
             return _cachedToken;
         }
 
@@ -76,16 +74,16 @@ namespace Maryar.Api.Services
 
             var body = new
             {
-                idServico    = codigoServico,
-                cepOrigem    = cepOrigemClean,
-                cepDestino   = cepDestinoClean,
-                psObjeto     = PesoKg,
-                tpObjeto     = "2", // 2 = caixa/pacote
-                comprimento  = Comprimento,
-                largura      = Largura,
-                altura       = Altura,
+                idServico          = codigoServico,
+                cepOrigem          = cepOrigemClean,
+                cepDestino         = cepDestinoClean,
+                psObjeto           = PesoKg,
+                tpObjeto           = "2",
+                comprimento        = Comprimento,
+                largura            = Largura,
+                altura             = Altura,
                 servicosAdicionais = new string[] { },
-                vlDeclarado  = "0"
+                vlDeclarado        = "0"
             };
 
             var req = new HttpRequestMessage(HttpMethod.Post, PrecoUrl);
@@ -103,7 +101,6 @@ namespace Maryar.Api.Services
 
             dynamic data = JsonConvert.DeserializeObject(json);
 
-            // A API retorna array de preços — pegamos o primeiro resultado
             dynamic item = data[0];
             decimal preco = decimal.Parse(((string)item.pcFinal).Replace(",", "."),
                 System.Globalization.CultureInfo.InvariantCulture);
@@ -111,11 +108,11 @@ namespace Maryar.Api.Services
 
             return new ShippingOption
             {
-                Code        = codigoServico,
-                Name        = nomeServico,
-                Price       = preco,
+                Code         = codigoServico,
+                Name         = nomeServico,
+                Price        = preco,
                 DeliveryDays = prazo,
-                Description = $"Entrega em até {prazo} dia{(prazo > 1 ? "s" : "")} útil{(prazo > 1 ? "": "")}"
+                Description  = $"Entrega em até {prazo} dia{(prazo > 1 ? "s" : "")} útil{(prazo > 1 ? "s" : "")}"
             };
         }
 
@@ -124,13 +121,11 @@ namespace Maryar.Api.Services
             var token = await GetTokenAsync();
             var options = new List<ShippingOption>();
 
-            // Calcula SEDEX e PAC em paralelo
             var sedexTask = GetPrecoAsync(token, "03220", "SEDEX", cepDestino);
             var pacTask   = GetPrecoAsync(token, "03298", "PAC",   cepDestino);
 
             await Task.WhenAll(sedexTask, pacTask);
 
-            // Ordena do mais barato para o mais caro
             var sedex = sedexTask.Result;
             var pac   = pacTask.Result;
 
