@@ -130,7 +130,7 @@
     <Compile Include="Services\JwtService.cs" />
     <Compile Include="Services\HmacValidator.cs" />
     <Compile Include="Services\PricingService.cs" />
-    <Compile Include="Services\InfinitePayClient.cs" />
+    <Compile Include="Services\AsaasClient.cs" />
     <Compile Include="Controllers\ProductsController.cs" />
     <Compile Include="Controllers\BrandsController.cs" />
     <Compile Include="Controllers\FamiliesController.cs" />
