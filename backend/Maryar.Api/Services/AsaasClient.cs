@@ -56,6 +56,7 @@ namespace Maryar.Api.Services
         {
             var req = new HttpRequestMessage(method, BaseUrl + path);
             req.Headers.Add("access_token", _apiKey);
+            req.Headers.Add("User-Agent", "Maryar/1.0"); // ← LINHA ADICIONADA
             if (body != null)
                 req.Content = new StringContent(
                     JsonConvert.SerializeObject(body),
@@ -159,12 +160,12 @@ namespace Maryar.Api.Services
                 },
                 creditCardHolderInfo = new
                 {
-                    name         = holder.Name,
-                    email        = holder.Email,
-                    cpfCnpj      = cpf,
-                    postalCode   = zip,
+                    name          = holder.Name,
+                    email         = holder.Email,
+                    cpfCnpj       = cpf,
+                    postalCode    = zip,
                     addressNumber = shipping.Number,
-                    phone        = phone
+                    phone         = phone
                 }
             }));
             var payJson = await pay.Content.ReadAsStringAsync();
