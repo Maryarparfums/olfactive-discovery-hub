@@ -1,0 +1,151 @@
+using System;
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+
+namespace Maryar.Api.Services
+{
+    public class ShippingOption
+    {
+        public string Code        { get; set; } // "03220" ou "03298"
+        public string Name        { get; set; } // "SEDEX" ou "PAC"
+        public decimal Price      { get; set; }
+        public int DeliveryDays   { get; set; }
+        public string Description { get; set; } // ex: "Entrega em até 3 dias úteis"
+    }
+
+    public class CorreiosService
+    {
+        private static readonly HttpClient _http = new HttpClient();
+
+        // Configure via variáveis de ambiente:
+        // CORREIOS_CARTAO    → número do Cartão de Postagem
+        // CORREIOS_SENHA     → senha do Cartão de Postagem
+        // CORREIOS_CEP_ORIGEM → CEP de onde você posta (agência da cidade vizinha)
+        private readonly string _cartao;
+        private readonly string _senha;
+        private readonly string _cepOrigem;
+
+        private const string TokenUrl = "https://api.correios.com.br/token/v1/autentica/cartaopostagem";
+        private const string PrecoUrl = "https://api.correios.com.br/preco/v1/nacional";
+
+        // Dimensões padrão para caixa de perfume (ajuste conforme sua embalagem)
+        private const string PesoKg      = "0.300"; // 300g
+        private const string Comprimento = "16";    // cm
+        private const string Largura     = "11";    // cm
+        private const string Altura      = "10";    // cm
+
+        private static string _cachedToken;
+        private static DateTime _tokenExpira = DateTime.MinValue;
+
+        public CorreiosService()
+        {
+            _cartao    = Environment.GetEnvironmentVariable("CORREIOS_CARTAO")     ?? throw new Exception("CORREIOS_CARTAO não configurado");
+            _senha     = Environment.GetEnvironmentVariable("CORREIOS_SENHA")      ?? throw new Exception("CORREIOS_SENHA não configurado");
+            _cepOrigem = Environment.GetEnvironmentVariable("CORREIOS_CEP_ORIGEM") ?? throw new Exception("CORREIOS_CEP_ORIGEM não configurado");
+        }
+
+        private async Task<string> GetTokenAsync()
+        {
+            if (!string.IsNullOrEmpty(_cachedToken) && DateTime.UtcNow < _tokenExpira)
+                return _cachedToken;
+
+            var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_cartao}:{_senha}"));
+            var req = new HttpRequestMessage(HttpMethod.Post, TokenUrl);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+            req.Headers.Add("User-Agent", "Maryar/1.0");
+
+            var res = await _http.SendAsync(req);
+            var json = await res.Content.ReadAsStringAsync();
+            if (!res.IsSuccessStatusCode)
+                throw new Exception("Correios: erro ao autenticar: " + json);
+
+            dynamic data = JsonConvert.DeserializeObject(json);
+            _cachedToken = (string)data.token;
+            _tokenExpira = DateTime.UtcNow.AddHours(1); // token válido por ~1h
+            return _cachedToken;
+        }
+
+        private async Task<ShippingOption> GetPrecoAsync(string token, string codigoServico, string nomeServico, string cepDestino)
+        {
+            var cepDestinoClean = cepDestino.Replace("-", "").Trim();
+            var cepOrigemClean  = _cepOrigem.Replace("-", "").Trim();
+
+            var body = new
+            {
+                idServico    = codigoServico,
+                cepOrigem    = cepOrigemClean,
+                cepDestino   = cepDestinoClean,
+                psObjeto     = PesoKg,
+                tpObjeto     = "2", // 2 = caixa/pacote
+                comprimento  = Comprimento,
+                largura      = Largura,
+                altura       = Altura,
+                servicosAdicionais = new string[] { },
+                vlDeclarado  = "0"
+            };
+
+            var req = new HttpRequestMessage(HttpMethod.Post, PrecoUrl);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            req.Headers.Add("User-Agent", "Maryar/1.0");
+            req.Content = new StringContent(
+                JsonConvert.SerializeObject(body),
+                Encoding.UTF8,
+                "application/json");
+
+            var res = await _http.SendAsync(req);
+            var json = await res.Content.ReadAsStringAsync();
+            if (!res.IsSuccessStatusCode)
+                throw new Exception($"Correios: erro ao calcular {nomeServico}: " + json);
+
+            dynamic data = JsonConvert.DeserializeObject(json);
+
+            // A API retorna array de preços — pegamos o primeiro resultado
+            dynamic item = data[0];
+            decimal preco = decimal.Parse(((string)item.pcFinal).Replace(",", "."),
+                System.Globalization.CultureInfo.InvariantCulture);
+            int prazo = (int)item.prazoEntrega;
+
+            return new ShippingOption
+            {
+                Code        = codigoServico,
+                Name        = nomeServico,
+                Price       = preco,
+                DeliveryDays = prazo,
+                Description = $"Entrega em até {prazo} dia{(prazo > 1 ? "s" : "")} útil{(prazo > 1 ? "": "")}"
+            };
+        }
+
+        public async Task<List<ShippingOption>> CalcularFreteAsync(string cepDestino)
+        {
+            var token = await GetTokenAsync();
+            var options = new List<ShippingOption>();
+
+            // Calcula SEDEX e PAC em paralelo
+            var sedexTask = GetPrecoAsync(token, "03220", "SEDEX", cepDestino);
+            var pacTask   = GetPrecoAsync(token, "03298", "PAC",   cepDestino);
+
+            await Task.WhenAll(sedexTask, pacTask);
+
+            // Ordena do mais barato para o mais caro
+            var sedex = sedexTask.Result;
+            var pac   = pacTask.Result;
+
+            if (pac.Price <= sedex.Price)
+            {
+                options.Add(pac);
+                options.Add(sedex);
+            }
+            else
+            {
+                options.Add(sedex);
+                options.Add(pac);
+            }
+
+            return options;
+        }
+    }
+}
