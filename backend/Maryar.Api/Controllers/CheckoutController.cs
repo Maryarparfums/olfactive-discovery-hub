@@ -191,7 +191,7 @@ namespace Maryar.Api.Controllers
             if (!userId.HasValue && string.IsNullOrEmpty(token))
                 return Ok(new List<object>());
 
-            return Ok(_orders.GetByUserOrders(userId, token));
+            return Ok(_orders.GetByUserOrToken(userId, token));
         }
 
         [HttpGet, Route("orders/{id:guid}")]
