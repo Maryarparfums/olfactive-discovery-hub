@@ -111,7 +111,7 @@ namespace Maryar.Api.Controllers
                 if (method == "pix")
                 {
                     var pix = await _asaas.CreatePixAsync(customerId, pricing.Total, orderNumber);
-                    _orders.UpdatePaymentReference(orderId, pix.PaymentId);
+                    _orders.UpdatePaymentInfo(orderId, pix.PaymentId, pix.QrCodeImage, pix.QrCodeText);
 
                     return Ok(new CheckoutResponse
                     {
@@ -129,8 +129,8 @@ namespace Maryar.Api.Controllers
                     var card = await _asaas.CreateCreditCardAsync(
                         customerId, pricing.Total, orderNumber,
                         installments, req.CreditCard, req.Customer, req.Shipping);
-
-                    _orders.UpdatePaymentReference(orderId, card.PaymentId);
+                   
+                    _orders.UpdatePaymentInfo(orderId, card.PaymentId, null, null);
 
                     var status = card.Status == "CONFIRMED" ? "paid" : "pending";
                     if (status == "paid")
