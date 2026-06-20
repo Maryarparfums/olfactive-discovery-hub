@@ -88,24 +88,20 @@ namespace Maryar.Api.Controllers
             }
         }
 
-        // -------------------------------------------------------
-        // POST api/auth/forgotpassword
-        // -------------------------------------------------------
         [HttpPost]
         public IHttpActionResult ForgotPassword([FromBody] ForgotPasswordRequest req)
         {
             try
             {
                 if (req == null || string.IsNullOrWhiteSpace(req.Email))
-                    return Ok(); // sempre 200 por segurança
+                    return Ok();
 
                 var user = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
                 if (user != null)
                 {
-                    // invalida tokens anteriores deste usuário
-                    _resets.InvalidarAnteriores(user.Id);
+                    // ← CORREÇÃO: user.Id é Guid, converter para string
+                    _resets.InvalidarAnteriores(user.Id.ToString());
 
-                    // gera token seguro de 64 caracteres
                     var bytes = new byte[32];
                     using (var rng = new RNGCryptoServiceProvider())
                         rng.GetBytes(bytes);
@@ -113,7 +109,8 @@ namespace Maryar.Api.Controllers
 
                     _resets.Create(new PasswordResetToken
                     {
-                        UserId    = user.Id,
+                        // ← CORREÇÃO: user.Id é Guid, converter para string
+                        UserId    = user.Id.ToString(),
                         Token     = tokenStr,
                         ExpiresAt = DateTime.UtcNow.AddHours(1),
                         Used      = false
@@ -133,9 +130,6 @@ namespace Maryar.Api.Controllers
             }
         }
 
-        // -------------------------------------------------------
-        // POST api/auth/resetpassword
-        // -------------------------------------------------------
         [HttpPost]
         public IHttpActionResult ResetPassword([FromBody] ResetPasswordRequest req)
         {
@@ -150,7 +144,9 @@ namespace Maryar.Api.Controllers
                     return Content(HttpStatusCode.BadRequest, new { message = "Link inválido ou expirado. Solicite um novo link." });
 
                 var novoHash = PasswordHasher.Hash(req.NewPassword);
-                _users.UpdatePassword(tokenEntity.UserId, novoHash);
+
+                // ← CORREÇÃO: tokenEntity.UserId é string, converter para Guid
+                _users.UpdatePassword(Guid.Parse(tokenEntity.UserId), novoHash);
 
                 _resets.MarcarComoUsado(tokenEntity.Id);
 
