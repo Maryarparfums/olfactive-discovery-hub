@@ -1,6 +1,5 @@
 using System;
-using System.Configuration;
-using MySql.Data.MySqlClient;
+using Maryar.Api.Infrastructure;
 using Maryar.Api.Models;
 using Maryar.Api.Repositories.Interfaces;
 
@@ -8,17 +7,16 @@ namespace Maryar.Api.Repositories.MySql
 {
     public class PasswordResetRepository : IPasswordResetRepository
     {
-        private readonly string _conn = ConfigurationManager
-            .ConnectionStrings["DefaultConnection"].ConnectionString;
+        private readonly IConnectionFactory _factory;
+        public PasswordResetRepository(IConnectionFactory factory) { _factory = factory; }
+        public PasswordResetRepository() : this(new MySqlConnectionFactory()) { }
 
         public void Create(PasswordResetToken token)
         {
-            using (var con = new MySqlConnection(_conn))
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
             {
-                con.Open();
-                var cmd = new MySqlCommand(
-                    "INSERT INTO password_reset_tokens (user_id, token, expires_at, used) " +
-                    "VALUES (@uid, @tok, @exp, 0)", con);
+                cmd.CommandText = "INSERT INTO password_reset_tokens (user_id, token, expires_at, used) VALUES (@uid, @tok, @exp, 0)";
                 cmd.Parameters.AddWithValue("@uid", token.UserId);
                 cmd.Parameters.AddWithValue("@tok", token.Token);
                 cmd.Parameters.AddWithValue("@exp", token.ExpiresAt);
@@ -28,36 +26,32 @@ namespace Maryar.Api.Repositories.MySql
 
         public PasswordResetToken GetByToken(string token)
         {
-            using (var con = new MySqlConnection(_conn))
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
             {
-                con.Open();
-                var cmd = new MySqlCommand(
-                    "SELECT id, user_id, token, expires_at, used " +
-                    "FROM password_reset_tokens WHERE token = @tok LIMIT 1", con);
+                cmd.CommandText = "SELECT id, user_id, token, expires_at, used FROM password_reset_tokens WHERE token = @tok LIMIT 1";
                 cmd.Parameters.AddWithValue("@tok", token);
                 using (var r = cmd.ExecuteReader())
                 {
                     if (!r.Read()) return null;
                     return new PasswordResetToken
                     {
-                        Id        = r.GetInt32("id"),
-                        UserId    = r.GetString("user_id"),   // ← string
-                        Token     = r.GetString("token"),
-                        ExpiresAt = r.GetDateTime("expires_at"),
-                        Used      = r.GetBoolean("used")
+                        Id        = Convert.ToInt32(r["id"]),
+                        UserId    = r["user_id"].ToString(),
+                        Token     = r["token"].ToString(),
+                        ExpiresAt = Convert.ToDateTime(r["expires_at"]),
+                        Used      = Convert.ToBoolean(r["used"])
                     };
                 }
             }
         }
 
-        public void InvalidarAnteriores(string userId)   // ← string
+        public void InvalidarAnteriores(string userId)
         {
-            using (var con = new MySqlConnection(_conn))
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
             {
-                con.Open();
-                var cmd = new MySqlCommand(
-                    "UPDATE password_reset_tokens SET used = 1 " +
-                    "WHERE user_id = @uid AND used = 0", con);
+                cmd.CommandText = "UPDATE password_reset_tokens SET used = 1 WHERE user_id = @uid AND used = 0";
                 cmd.Parameters.AddWithValue("@uid", userId);
                 cmd.ExecuteNonQuery();
             }
@@ -65,11 +59,10 @@ namespace Maryar.Api.Repositories.MySql
 
         public void MarcarComoUsado(int id)
         {
-            using (var con = new MySqlConnection(_conn))
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
             {
-                con.Open();
-                var cmd = new MySqlCommand(
-                    "UPDATE password_reset_tokens SET used = 1 WHERE id = @id", con);
+                cmd.CommandText = "UPDATE password_reset_tokens SET used = 1 WHERE id = @id";
                 cmd.Parameters.AddWithValue("@id", id);
                 cmd.ExecuteNonQuery();
             }
