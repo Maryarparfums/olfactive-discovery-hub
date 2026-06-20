@@ -8,19 +8,23 @@ namespace Maryar.Api.Services
     {
         public void EnviarLinkRedefinicao(string destinatario, string link)
         {
+            var host   = ConfigurationManager.AppSettings["Email.Host"];
+            var port   = int.Parse(ConfigurationManager.AppSettings["Email.Port"] ?? "587");
+            var user   = ConfigurationManager.AppSettings["Email.Usuario"];
+            var senha  = ConfigurationManager.AppSettings["Email.Senha"];
+            var sender = ConfigurationManager.AppSettings["Email.Remetente"];
+
             var smtp = new SmtpClient
             {
-                Host      = "localhost",
-                Port      = 25,
-                EnableSsl = false
+                Host        = host,
+                Port        = port,
+                EnableSsl   = true,
+                Credentials = new NetworkCredential(user, senha)
             };
 
             var mensagem = new MailMessage
             {
-                From       = new MailAddress(
-                                 ConfigurationManager.AppSettings["Email.Remetente"],
-                                 "Maryar"
-                             ),
+                From       = new MailAddress(sender, "Maryar"),
                 Subject    = "Redefinição de senha — Maryar",
                 IsBodyHtml = true,
                 Body       = string.Format(@"
