@@ -14,12 +14,13 @@ namespace Maryar.Api.Services
             var senha  = ConfigurationManager.AppSettings["Email.Senha"];
             var sender = ConfigurationManager.AppSettings["Email.Remetente"];
 
-            var smtp = new SmtpClient
+           var smtp = new SmtpClient
             {
-                Host        = host,
+                Host        = ConfigurationManager.AppSettings["Email.Host"],
                 Port        = port,
-                EnableSsl   = true,
-                Credentials = new NetworkCredential(user, senha)
+                EnableSsl   = port == 465,          // SSL só na 465; 587 usa STARTTLS
+                Credentials = new NetworkCredential(user, senha),
+                DeliveryMethod = SmtpDeliveryMethod.Network
             };
 
             var mensagem = new MailMessage
