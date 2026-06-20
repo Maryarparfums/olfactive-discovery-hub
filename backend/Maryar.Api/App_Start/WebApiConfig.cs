@@ -1,5 +1,4 @@
 using System.Web.Http;
-using System.Web.Http.Cors;
 using Maryar.Api.Infrastructure;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -10,17 +9,6 @@ namespace Maryar.Api
     {
         public static void Register(HttpConfiguration config)
         {
-            // CORS — lê origens do Web.config
-            var origins = AppConfig.Get("Maryar:CorsOrigins") ?? "https://maryar.com.br";
-            var cors = new EnableCorsAttribute(
-                origins: origins,
-                headers: "Content-Type, Authorization, X-Requested-With",
-                methods: "GET, POST, PUT, DELETE, OPTIONS"
-            );
-            cors.SupportsCredentials = true;
-            config.EnableCors(cors);
-
-            // JSON
             var json = config.Formatters.JsonFormatter;
             json.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
             json.SerializerSettings.NullValueHandling = NullValueHandling.Ignore;
@@ -32,7 +20,6 @@ namespace Maryar.Api
 
             config.MapHttpAttributeRoutes();
 
-            // Auth
             config.Routes.MapHttpRoute(
                 name: "AuthSignUp",
                 routeTemplate: "auth/signup",
@@ -53,8 +40,6 @@ namespace Maryar.Api
                 routeTemplate: "auth/resetpassword",
                 defaults: new { controller = "Auth", action = "ResetPassword" }
             );
-
-            // Produtos
             config.Routes.MapHttpRoute(
                 name: "ProductsBySlug",
                 routeTemplate: "products/{slug}",
@@ -65,8 +50,6 @@ namespace Maryar.Api
                 routeTemplate: "products",
                 defaults: new { controller = "Products" }
             );
-
-            // Brands e Families
             config.Routes.MapHttpRoute(
                 name: "BrandsList",
                 routeTemplate: "brands",
@@ -77,8 +60,6 @@ namespace Maryar.Api
                 routeTemplate: "families",
                 defaults: new { controller = "Families" }
             );
-
-            // Fallback genérico
             config.Routes.MapHttpRoute(
                 name: "DefaultApi",
                 routeTemplate: "{controller}/{id}",
