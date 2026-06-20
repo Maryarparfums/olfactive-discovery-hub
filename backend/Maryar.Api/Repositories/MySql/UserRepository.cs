@@ -62,5 +62,17 @@ namespace Maryar.Api.Repositories.MySql
             }
             return id;
         }
+  
+        public void UpdatePassword(Guid id, string passwordHash)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE users SET password_hash = @h WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id", id.ToString());
+                cmd.Parameters.AddWithValue("@h", passwordHash);
+                cmd.ExecuteNonQuery();
+            }
+        }
     }
 }
