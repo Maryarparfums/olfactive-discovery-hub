@@ -1,4 +1,5 @@
 using System.Web.Http;
+using System.Web.Http.Cors;
 using Maryar.Api.Infrastructure;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -9,6 +10,17 @@ namespace Maryar.Api
     {
         public static void Register(HttpConfiguration config)
         {
+            // CORS — lê origens do Web.config
+            var origins = AppConfig.Get("Maryar:CorsOrigins") ?? "https://maryar.com.br";
+            var cors = new EnableCorsAttribute(
+                origins: origins,
+                headers: "Content-Type, Authorization, X-Requested-With",
+                methods: "GET, POST, PUT, DELETE, OPTIONS"
+            );
+            cors.SupportsCredentials = true;
+            config.EnableCors(cors);
+
+            // JSON
             var json = config.Formatters.JsonFormatter;
             json.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
             json.SerializerSettings.NullValueHandling = NullValueHandling.Ignore;
