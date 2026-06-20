@@ -1,8 +1,6 @@
 using System.Configuration;
 using System.Net;
 using System.Net.Mail;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
 
 namespace Maryar.Api.Services
 {
@@ -10,30 +8,22 @@ namespace Maryar.Api.Services
     {
         public void EnviarLinkRedefinicao(string destinatario, string link)
         {
-            // Necessário para hospedagem compartilhada Locaweb (certificado SSL do SMTP)
-            ServicePointManager.ServerCertificateValidationCallback =
-                (object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors errors) => true;
-
             var smtp = new SmtpClient
             {
-                Host        = ConfigurationManager.AppSettings["Email.Host"],
-                Port        = int.Parse(ConfigurationManager.AppSettings["Email.Port"]),
-                EnableSsl   = true,
-                Credentials = new NetworkCredential(
-                    ConfigurationManager.AppSettings["Email.Usuario"],
-                    ConfigurationManager.AppSettings["Email.Senha"]
-                )
+                Host      = "localhost",
+                Port      = 25,
+                EnableSsl = false
             };
 
             var mensagem = new MailMessage
             {
-                From        = new MailAddress(
-                                  ConfigurationManager.AppSettings["Email.Remetente"],
-                                  "Maryar"
-                              ),
-                Subject     = "Redefinição de senha — Maryar",
-                IsBodyHtml  = true,
-                Body        = string.Format(@"
+                From       = new MailAddress(
+                                 ConfigurationManager.AppSettings["Email.Remetente"],
+                                 "Maryar"
+                             ),
+                Subject    = "Redefinição de senha — Maryar",
+                IsBodyHtml = true,
+                Body       = string.Format(@"
 <!DOCTYPE html>
 <html lang='pt-BR'>
 <head>
@@ -42,8 +32,7 @@ namespace Maryar.Api.Services
   <title>Redefinição de senha — Maryar</title>
 </head>
 <body style='margin:0;padding:0;background-color:#f5f2ee;font-family:Georgia,""Times New Roman"",serif;'>
-  <table width='100%' cellpadding='0' cellspacing='0' border='0'
-         style='background-color:#f5f2ee;padding:48px 16px;'>
+  <table width='100%' cellpadding='0' cellspacing='0' border='0' style='background-color:#f5f2ee;padding:48px 16px;'>
     <tr>
       <td align='center' valign='top'>
         <table width='100%' cellpadding='0' cellspacing='0' border='0' style='max-width:520px;'>
