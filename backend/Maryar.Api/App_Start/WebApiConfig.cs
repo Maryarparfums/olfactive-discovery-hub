@@ -18,7 +18,7 @@ namespace Maryar.Api
             config.Formatters.Remove(config.Formatters.XmlFormatter);
             config.Filters.Add(new ApiExceptionFilter());
 
-            config.MapHttpAttributeRoutes(); 
+            config.MapHttpAttributeRoutes();
 
             // Auth
             config.Routes.MapHttpRoute(
@@ -30,6 +30,16 @@ namespace Maryar.Api
                 name: "AuthSignIn",
                 routeTemplate: "auth/signin",
                 defaults: new { controller = "Auth", action = "SignIn" }
+            );
+            config.Routes.MapHttpRoute(
+                name: "AuthForgotPassword",
+                routeTemplate: "auth/forgotpassword",
+                defaults: new { controller = "Auth", action = "ForgotPassword" }
+            );
+            config.Routes.MapHttpRoute(
+                name: "AuthResetPassword",
+                routeTemplate: "auth/resetpassword",
+                defaults: new { controller = "Auth", action = "ResetPassword" }
             );
 
             // Produtos
