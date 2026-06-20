@@ -97,29 +97,44 @@ namespace Maryar.Api.Controllers
                     return Ok();
 
                 var user = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
-                if (user != null)
+                if (user == null)
+                    return Ok(); // não revela se e-mail existe
+
+                _resets.InvalidarAnteriores(user.Id.ToString());
+
+                var bytes = new byte[32];
+                using (var rng = new RNGCryptoServiceProvider())
+                    rng.GetBytes(bytes);
+                var tokenStr = BitConverter.ToString(bytes).Replace("-", "").ToLower();
+
+                _resets.Create(new PasswordResetToken
                 {
-                    // ← CORREÇÃO: user.Id é Guid, converter para string
-                    _resets.InvalidarAnteriores(user.Id.ToString());
+                    UserId    = user.Id.ToString(),
+                    Token     = tokenStr,
+                    ExpiresAt = DateTime.UtcNow.AddHours(1),
+                    Used      = false
+                });
 
-                    var bytes = new byte[32];
-                    using (var rng = new RNGCryptoServiceProvider())
-                        rng.GetBytes(bytes);
-                    var tokenStr = BitConverter.ToString(bytes).Replace("-", "").ToLower();
+                var urlBase = ConfigurationManager.AppSettings["App.Url"];
+                var link    = string.Format("{0}/redefinir-senha?token={1}", urlBase, tokenStr);
 
-                    _resets.Create(new PasswordResetToken
-                    {
-                        // ← CORREÇÃO: user.Id é Guid, converter para string
-                        UserId    = user.Id.ToString(),
-                        Token     = tokenStr,
-                        ExpiresAt = DateTime.UtcNow.AddHours(1),
-                        Used      = false
-                    });
-
-                    var urlBase = ConfigurationManager.AppSettings["App.Url"];
-                    var link    = string.Format("{0}/redefinir-senha?token={1}", urlBase, tokenStr);
-
+                try
+                {
                     _email.EnviarLinkRedefinicao(user.Email, link);
+                }
+                catch (Exception emailEx)
+                {
+                    // expõe erro SMTP para diagnóstico — remover após corrigir
+                    return Content(HttpStatusCode.InternalServerError, new
+                    {
+                        error = "Falha ao enviar e-mail: " + emailEx.Message,
+                        inner = emailEx.InnerException != null ? emailEx.InnerException.Message : null,
+                        smtp  = new
+                        {
+                            host = System.Configuration.ConfigurationManager.AppSettings["Email.Host"],
+                            port = System.Configuration.ConfigurationManager.AppSettings["Email.Port"]
+                        }
+                    });
                 }
 
                 return Ok();
@@ -145,7 +160,6 @@ namespace Maryar.Api.Controllers
 
                 var novoHash = PasswordHasher.Hash(req.NewPassword);
 
-                // ← CORREÇÃO: tokenEntity.UserId é string, converter para Guid
                 _users.UpdatePassword(Guid.Parse(tokenEntity.UserId), novoHash);
 
                 _resets.MarcarComoUsado(tokenEntity.Id);
