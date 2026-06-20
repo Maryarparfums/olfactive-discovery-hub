@@ -60,18 +60,17 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="System.Web.Http, Version=5.2.9.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-	  <HintPath>..\packages\Microsoft.AspNet.WebApi.Core.5.2.9\lib\net45\System.Web.Http.dll</HintPath>
-	  <Private>True</Private>
-	</Reference>
-
-	<Reference Include="System.Web.Http.WebHost, Version=5.2.9.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.AspNet.WebApi.Core.5.2.9\lib\net45\System.Web.Http.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Web.Http.WebHost, Version=5.2.9.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.AspNet.WebApi.WebHost.5.2.9\lib\net45\System.Web.Http.WebHost.dll</HintPath>
       <Private>True</Private>
-	</Reference>
-	<Reference Include="System.Net.Http.Formatting, Version=5.2.9.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+    </Reference>
+    <Reference Include="System.Net.Http.Formatting, Version=5.2.9.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.AspNet.WebApi.Client.5.2.9\lib\net45\System.Net.Http.Formatting.dll</HintPath>
       <Private>True</Private>
-	</Reference>
+    </Reference>
     <Reference Include="System.Web.Cors, Version=5.2.9.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.AspNet.Cors.5.2.9\lib\net45\System.Web.Cors.dll</HintPath>
     </Reference>
@@ -86,7 +85,7 @@
     <Reference Include="System.Web" />
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Xml" />
-	<Reference Include="Microsoft.CSharp" />
+    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App_Start\WebApiConfig.cs" />
@@ -107,6 +106,7 @@
     <Compile Include="Models\OrderItem.cs" />
     <Compile Include="Models\PaymentEvent.cs" />
     <Compile Include="Models\User.cs" />
+    <Compile Include="Models\PasswordResetToken.cs" />
     <Compile Include="Dtos\ProductDtos.cs" />
     <Compile Include="Dtos\CartDtos.cs" />
     <Compile Include="Dtos\CheckoutDtos.cs" />
@@ -119,6 +119,7 @@
     <Compile Include="Repositories\Interfaces\IOrderRepository.cs" />
     <Compile Include="Repositories\Interfaces\IPaymentEventRepository.cs" />
     <Compile Include="Repositories\Interfaces\IUserRepository.cs" />
+    <Compile Include="Repositories\Interfaces\IPasswordResetRepository.cs" />
     <Compile Include="Repositories\MySql\ProductRepository.cs" />
     <Compile Include="Repositories\MySql\BrandRepository.cs" />
     <Compile Include="Repositories\MySql\FamilyRepository.cs" />
@@ -126,11 +127,13 @@
     <Compile Include="Repositories\MySql\OrderRepository.cs" />
     <Compile Include="Repositories\MySql\PaymentEventRepository.cs" />
     <Compile Include="Repositories\MySql\UserRepository.cs" />
+    <Compile Include="Repositories\MySql\PasswordResetRepository.cs" />
     <Compile Include="Services\PasswordHasher.cs" />
     <Compile Include="Services\JwtService.cs" />
     <Compile Include="Services\HmacValidator.cs" />
     <Compile Include="Services\PricingService.cs" />
     <Compile Include="Services\AsaasClient.cs" />
+    <Compile Include="Services\EmailService.cs" />
     <Compile Include="Controllers\ProductsController.cs" />
     <Compile Include="Controllers\BrandsController.cs" />
     <Compile Include="Controllers\FamiliesController.cs" />
