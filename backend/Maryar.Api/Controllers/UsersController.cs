@@ -50,7 +50,8 @@ namespace Maryar.Api.Controllers
         }
 
         // PUT /api/users/me
-        [HttpPut, Route("me")]
+       // POST /api/users/me
+        [HttpPost, Route("me")]
         [JwtAuth]
         public IHttpActionResult UpdateMe([FromBody] UserProfileDto dto)
         {
