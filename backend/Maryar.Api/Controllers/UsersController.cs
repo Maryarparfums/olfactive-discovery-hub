@@ -22,7 +22,6 @@ namespace Maryar.Api.Controllers
 
         // GET /api/users/me
         [HttpGet, Route("me")]
-        [JwtAuth]
         public IHttpActionResult GetMe()
         {
             var userId = JwtAuthAttribute.CurrentUserId();
@@ -51,7 +50,6 @@ namespace Maryar.Api.Controllers
 
         // PUT /api/users/me
         [HttpPut, Route("me")]
-        [JwtAuth]
         public IHttpActionResult UpdateMe([FromBody] UserProfileDto dto)
         {
             if (dto == null)
