@@ -84,6 +84,37 @@ namespace Maryar.Api.Controllers
             pricing.ShippingFee = req.ShippingOption.Price;
             pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
 
+            // Salva/atualiza os dados do cliente ANTES de criar o pedido,
+            // para que o UserId fique corretamente vinculado desde o início.
+            // Logado  → atualiza pelo ID.
+            // Visitante → busca pelo e-mail; atualiza se existir, cria se não existir.
+            var profileDto = new UserProfileDto
+            {
+                Name        = req.Customer.Name,
+                Email       = req.Customer.Email,
+                Phone       = req.Customer.Phone,
+                Cpf         = req.Customer.Document,
+                Cep         = req.Shipping.Zip,
+                Logradouro  = req.Shipping.Street,
+                Numero      = req.Shipping.Number,
+                Complemento = req.Shipping.Complement,
+                Bairro      = req.Shipping.Neighborhood,
+                Cidade      = req.Shipping.City,
+                Estado      = req.Shipping.State
+            };
+
+            var currentUserId = JwtAuthAttribute.CurrentUserId();
+            Guid userId;
+            if (currentUserId.HasValue)
+            {
+                userId = currentUserId.Value;
+                _users.UpdateProfile(userId, profileDto);
+            }
+            else
+            {
+                userId = _users.UpsertByEmail(profileDto);
+            }
+
             var orderId     = Guid.NewGuid();
             var orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
 
@@ -91,7 +122,7 @@ namespace Maryar.Api.Controllers
             {
                 Id                   = orderId,
                 OrderNumber          = orderNumber,
-                UserId               = JwtAuthAttribute.CurrentUserId(),
+                UserId               = userId,
                 CustomerName         = req.Customer.Name,
                 CustomerEmail        = req.Customer.Email,
                 CustomerDocument     = req.Customer.Document,
@@ -113,37 +144,6 @@ namespace Maryar.Api.Controllers
             };
             foreach (var it in pricing.Items) it.OrderId = orderId;
             _orders.Create(order, pricing.Items);
-
-            // Sempre salva/atualiza dados do cliente na tabela users.
-            // Logado  → atualiza pelo ID.
-            // Visitante → busca pelo e-mail; atualiza se existir, cria se não existir.
-            // Assim, quando o cliente usar "esqueci minha senha", os dados já estão lá.
-            var profileDto = new UserProfileDto
-            {
-                Name        = req.Customer.Name,
-                Email       = req.Customer.Email,
-                Phone       = req.Customer.Phone,
-                Cpf         = req.Customer.Document,
-                Cep         = req.Shipping.Zip,
-                Logradouro  = req.Shipping.Street,
-                Numero      = req.Shipping.Number,
-                Complemento = req.Shipping.Complement,
-                Bairro      = req.Shipping.Neighborhood,
-                Cidade      = req.Shipping.City,
-                Estado      = req.Shipping.State
-            };
-
-            var currentUserId = JwtAuthAttribute.CurrentUserId();
-            if (currentUserId.HasValue)
-            {
-                // Cliente logado: atualiza pelo ID
-                _users.UpdateProfile(currentUserId.Value, profileDto);
-            }
-            else
-            {
-                // Visitante: cria ou atualiza pelo e-mail
-                _users.UpsertByEmail(profileDto);
-            }
 
             try
             {
