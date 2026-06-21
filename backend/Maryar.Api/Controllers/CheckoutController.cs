@@ -114,24 +114,35 @@ namespace Maryar.Api.Controllers
             foreach (var it in pricing.Items) it.OrderId = orderId;
             _orders.Create(order, pricing.Items);
 
-            // Salva dados do cliente na tabela users (se estiver logado)
+            // Sempre salva/atualiza dados do cliente na tabela users.
+            // Logado  → atualiza pelo ID.
+            // Visitante → busca pelo e-mail; atualiza se existir, cria se não existir.
+            // Assim, quando o cliente usar "esqueci minha senha", os dados já estão lá.
+            var profileDto = new UserProfileDto
+            {
+                Name        = req.Customer.Name,
+                Email       = req.Customer.Email,
+                Phone       = req.Customer.Phone,
+                Cpf         = req.Customer.Document,
+                Cep         = req.Shipping.Zip,
+                Logradouro  = req.Shipping.Street,
+                Numero      = req.Shipping.Number,
+                Complemento = req.Shipping.Complement,
+                Bairro      = req.Shipping.Neighborhood,
+                Cidade      = req.Shipping.City,
+                Estado      = req.Shipping.State
+            };
+
             var currentUserId = JwtAuthAttribute.CurrentUserId();
             if (currentUserId.HasValue)
             {
-                _users.UpdateProfile(currentUserId.Value, new UserProfileDto
-                {
-                    Name        = req.Customer.Name,
-                    Email       = req.Customer.Email,
-                    Phone       = req.Customer.Phone,
-                    Cpf         = req.Customer.Document,
-                    Cep         = req.Shipping.Zip,
-                    Logradouro  = req.Shipping.Street,
-                    Numero      = req.Shipping.Number,
-                    Complemento = req.Shipping.Complement,
-                    Bairro      = req.Shipping.Neighborhood,
-                    Cidade      = req.Shipping.City,
-                    Estado      = req.Shipping.State
-                });
+                // Cliente logado: atualiza pelo ID
+                _users.UpdateProfile(currentUserId.Value, profileDto);
+            }
+            else
+            {
+                // Visitante: cria ou atualiza pelo e-mail
+                _users.UpsertByEmail(profileDto);
             }
 
             try
