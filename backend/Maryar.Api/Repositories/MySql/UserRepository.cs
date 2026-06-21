@@ -178,6 +178,7 @@ namespace Maryar.Api.Repositories.MySql
                         cmd.Parameters.AddWithValue("@cidade",      (object)dto.Cidade      ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@estado",      (object)dto.Estado      ?? DBNull.Value);
                         cmd.ExecuteNonQuery();
+                        return existingId.Value;
                     }
                 }
                 else
@@ -194,7 +195,9 @@ namespace Maryar.Api.Repositories.MySql
                                 (@id, @email, @name, '', 'customer',
                                  @phone, @cpf, @cep, @logradouro, @numero,
                                  @complemento, @bairro, @cidade, @estado)";
-                        cmd.Parameters.AddWithValue("@id",          Guid.NewGuid().ToString());
+                    
+                        var newId = Guid.NewGuid();
+                        cmd.Parameters.AddWithValue("@id",          newId.ToString());
                         cmd.Parameters.AddWithValue("@email",       dto.Email.ToLowerInvariant());
                         cmd.Parameters.AddWithValue("@name",        dto.Name);
                         cmd.Parameters.AddWithValue("@phone",       (object)dto.Phone       ?? DBNull.Value);
@@ -207,6 +210,7 @@ namespace Maryar.Api.Repositories.MySql
                         cmd.Parameters.AddWithValue("@cidade",      (object)dto.Cidade      ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@estado",      (object)dto.Estado      ?? DBNull.Value);
                         cmd.ExecuteNonQuery();
+                        return newId;
                     }
                 }
             }
