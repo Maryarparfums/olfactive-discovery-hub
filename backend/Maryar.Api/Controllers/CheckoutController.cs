@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Http;
@@ -51,6 +52,20 @@ namespace Maryar.Api.Controllers
             return _carts.GetOrCreate(userId, token).Id;
         }
 
+        // Tenta validar o JWT se presente no header, sem bloquear a requisição se ausente.
+        private void TryAuthenticateRequest()
+        {
+            var auth = Request.Headers.Authorization;
+            if (auth == null || auth.Scheme != "Bearer" || string.IsNullOrWhiteSpace(auth.Parameter))
+                return;
+            try
+            {
+                var principal = new JwtService().ValidateToken(auth.Parameter);
+                Thread.CurrentPrincipal = principal;
+            }
+            catch { /* token inválido — trata como visitante */ }
+        }
+
         [HttpPost, Route("")]
         public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
         {
@@ -85,7 +100,7 @@ namespace Maryar.Api.Controllers
             pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
 
             // Salva/atualiza os dados do cliente ANTES de criar o pedido,
-            // para que o UserId fique corretamente vinculado desde o início.
+            // garantindo que o UserId fique vinculado desde o início.
             // Logado  → atualiza pelo ID.
             // Visitante → busca pelo e-mail; atualiza se existir, cria se não existir.
             var profileDto = new UserProfileDto
@@ -213,6 +228,8 @@ namespace Maryar.Api.Controllers
         [HttpGet, Route("orders")]
         public IHttpActionResult GetMyOrders()
         {
+            TryAuthenticateRequest();
+
             var userId = JwtAuthAttribute.CurrentUserId();
             string token = null;
             var ctx = HttpContext.Current;
@@ -230,6 +247,8 @@ namespace Maryar.Api.Controllers
         [HttpGet, Route("orders/{id:guid}")]
         public IHttpActionResult GetOrder(Guid id)
         {
+            TryAuthenticateRequest();
+
             var o = _orders.GetById(id);
             if (o == null) return NotFound();
             return Ok(new { order = o, items = _orders.GetItems(id) });
