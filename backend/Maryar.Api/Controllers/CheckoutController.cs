@@ -22,15 +22,19 @@ namespace Maryar.Api.Controllers
         private readonly IProductRepository _products;
         private readonly IOrderRepository   _orders;
         private readonly AsaasClient        _asaas;
+        private readonly IUserRepository    _users;
 
         public CheckoutController()
             : this(new CartRepository(), new ProductRepository(),
-                   new OrderRepository(), new AsaasClient()) { }
+                   new OrderRepository(), new AsaasClient(),
+                   new UserRepository()) { }
 
         public CheckoutController(ICartRepository carts, IProductRepository products,
-                                  IOrderRepository orders, AsaasClient asaas)
+                                  IOrderRepository orders, AsaasClient asaas,
+                                  IUserRepository users)
         {
-            _carts = carts; _products = products; _orders = orders; _asaas = asaas;
+            _carts = carts; _products = products; _orders = orders;
+            _asaas = asaas; _users = users;
         }
 
         private Guid? ResolveCartId()
@@ -53,7 +57,6 @@ namespace Maryar.Api.Controllers
             if (req?.Customer == null || req.Shipping == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
 
-            // ← ALTERADO: valida se o cliente escolheu um frete
             if (req.ShippingOption == null || req.ShippingOption.Price <= 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opção de frete antes de continuar." });
 
@@ -78,7 +81,6 @@ namespace Maryar.Api.Controllers
             if (pricing.Total <= 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Não foi possível calcular o total." });
 
-            // ← ALTERADO: usa o frete real dos Correios no lugar do valor fixo
             pricing.ShippingFee = req.ShippingOption.Price;
             pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
 
@@ -87,30 +89,50 @@ namespace Maryar.Api.Controllers
 
             var order = new Order
             {
-                Id                 = orderId,
-                OrderNumber        = orderNumber,
-                UserId             = JwtAuthAttribute.CurrentUserId(),
-                CustomerName       = req.Customer.Name,
-                CustomerEmail      = req.Customer.Email,
-                CustomerDocument   = req.Customer.Document,
-                CustomerPhone      = req.Customer.Phone,
-                ShippingZip        = req.Shipping.Zip,
-                ShippingStreet     = req.Shipping.Street,
-                ShippingNumber     = req.Shipping.Number,
-                ShippingComplement = req.Shipping.Complement,
+                Id                   = orderId,
+                OrderNumber          = orderNumber,
+                UserId               = JwtAuthAttribute.CurrentUserId(),
+                CustomerName         = req.Customer.Name,
+                CustomerEmail        = req.Customer.Email,
+                CustomerDocument     = req.Customer.Document,
+                CustomerPhone        = req.Customer.Phone,
+                ShippingZip          = req.Shipping.Zip,
+                ShippingStreet       = req.Shipping.Street,
+                ShippingNumber       = req.Shipping.Number,
+                ShippingComplement   = req.Shipping.Complement,
                 ShippingNeighborhood = req.Shipping.Neighborhood,
-                ShippingCity       = req.Shipping.City,
-                ShippingState      = req.Shipping.State,
-                Subtotal           = pricing.Subtotal,
-                ShippingFee        = pricing.ShippingFee,
-                Discount           = pricing.Discount,
-                Total              = pricing.Total,
-                PaymentMethod      = method,
-                PaymentStatus      = "pending",
-                OrderStatus        = "created"
+                ShippingCity         = req.Shipping.City,
+                ShippingState        = req.Shipping.State,
+                Subtotal             = pricing.Subtotal,
+                ShippingFee          = pricing.ShippingFee,
+                Discount             = pricing.Discount,
+                Total                = pricing.Total,
+                PaymentMethod        = method,
+                PaymentStatus        = "pending",
+                OrderStatus          = "created"
             };
             foreach (var it in pricing.Items) it.OrderId = orderId;
             _orders.Create(order, pricing.Items);
+
+            // Salva dados do cliente na tabela users (se estiver logado)
+            var currentUserId = JwtAuthAttribute.CurrentUserId();
+            if (currentUserId.HasValue)
+            {
+                _users.UpdateProfile(currentUserId.Value, new UserProfileDto
+                {
+                    Name        = req.Customer.Name,
+                    Email       = req.Customer.Email,
+                    Phone       = req.Customer.Phone,
+                    Cpf         = req.Customer.Document,
+                    Cep         = req.Shipping.Zip,
+                    Logradouro  = req.Shipping.Street,
+                    Numero      = req.Shipping.Number,
+                    Complemento = req.Shipping.Complement,
+                    Bairro      = req.Shipping.Neighborhood,
+                    Cidade      = req.Shipping.City,
+                    Estado      = req.Shipping.State
+                });
+            }
 
             try
             {
@@ -137,7 +159,7 @@ namespace Maryar.Api.Controllers
                     var card = await _asaas.CreateCreditCardAsync(
                         customerId, pricing.Total, orderNumber,
                         installments, req.CreditCard, req.Customer, req.Shipping);
-                   
+
                     _orders.UpdatePaymentInfo(orderId, card.PaymentId, null, null);
 
                     var status = card.Status == "CONFIRMED" ? "paid" : "pending";
