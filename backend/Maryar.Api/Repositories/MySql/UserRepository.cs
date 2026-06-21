@@ -134,7 +134,7 @@ namespace Maryar.Api.Repositories.MySql
             }
         }
 
-        public void UpsertByEmail(UserProfileDto dto)
+        public Guid UpsertByEmail(UserProfileDto dto)
         {
             using (var cn = _factory.Create())
             {
