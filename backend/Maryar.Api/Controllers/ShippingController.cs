@@ -1,15 +1,17 @@
 using System;
+using System.Net;
 using System.Threading.Tasks;
+using System.Web.Http;
 using Maryar.Api.Services;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Maryar.Api.Controllers
 {
-    [ApiController]
-    [Route("api/shipping")]
-    public class ShippingController : ControllerBase
+    [RoutePrefix("shipping")]
+    public class ShippingController : ApiController
     {
         private readonly CorreiosService _correios;
+
+        public ShippingController() : this(new CorreiosService()) { }
 
         public ShippingController(CorreiosService correios)
         {
@@ -17,11 +19,11 @@ namespace Maryar.Api.Controllers
         }
 
         // GET /api/shipping/calculate?cep=01310100
-        [HttpGet("calculate")]
-        public async Task<IActionResult> Calculate([FromQuery] string cep)
+        [HttpGet, Route("calculate")]
+        public async Task<IHttpActionResult> Calculate([FromUri] string cep)
         {
             if (string.IsNullOrWhiteSpace(cep) || cep.Replace("-", "").Trim().Length != 8)
-                return BadRequest(new { error = "CEP inválido." });
+                return Content(HttpStatusCode.BadRequest, new { error = "CEP inválido." });
 
             try
             {
@@ -30,7 +32,7 @@ namespace Maryar.Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Erro ao calcular frete: " + ex.Message });
+                return Content(HttpStatusCode.InternalServerError, new { error = "Erro ao calcular frete: " + ex.Message });
             }
         }
     }
