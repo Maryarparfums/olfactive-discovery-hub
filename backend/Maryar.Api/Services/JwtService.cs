@@ -24,17 +24,17 @@ namespace Maryar.Api.Services
             expiresAt = DateTime.UtcNow.AddMinutes(mins);
 
             var token = new JwtSecurityToken(
-                issuer:            issuer,
-                audience:          audience,
+                issuer:             issuer,
+                audience:           audience,
                 claims: new[]
                 {
                     new Claim(ClaimTypes.NameIdentifier, u.Id.ToString()),
                     new Claim(ClaimTypes.Email,          u.Email ?? ""),
-                    new Claim(ClaimTypes.Name,           u.Name ?? ""),
-                    new Claim(ClaimTypes.Role,           u.Role ?? "customer")
+                    new Claim(ClaimTypes.Name,           u.Name  ?? ""),
+                    new Claim(ClaimTypes.Role,           u.Role  ?? "customer")
                 },
-                notBefore:         DateTime.UtcNow,
-                expires:           expiresAt,
+                notBefore:          DateTime.UtcNow,
+                expires:            expiresAt,
                 signingCredentials: creds
             );
 
@@ -88,8 +88,8 @@ namespace Maryar.Api.Services
             var expectedAudience = AppConfig.Get("Maryar:JwtAudience");
             if (audience != null && audience.ToString() != expectedAudience)
                 throw new Exception("Audience inválida.");
-           
-            // ✅ CORRETO — usa ClaimTypes que são iguais às URIs longas no payload
+
+            // ✅ Lê com ClaimTypes — que são as URIs longas, exatamente como gravadas no JWT
             var claims = new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, (string)obj[ClaimTypes.NameIdentifier] ?? ""),
