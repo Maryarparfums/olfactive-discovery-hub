@@ -39,20 +39,15 @@ namespace Maryar.Api.Controllers
             var existing = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
 
             if (existing != null && !string.IsNullOrEmpty(existing.PasswordHash))
-            {
-                // Conta completa já existe → não permite duplicar
                 return Content(HttpStatusCode.Conflict, new { error = "E-mail já cadastrado." });
-            }
 
             User user;
 
             if (existing != null && string.IsNullOrEmpty(existing.PasswordHash))
             {
-                // Conta criada automaticamente no checkout (sem senha) → apenas ativa com a nova senha
-                var novoHash = PasswordHasher.Hash(req.Password);
-                _users.UpdatePassword(existing.Id, novoHash);
+                // Conta criada automaticamente no checkout (sem senha) → ativa com a nova senha
+                _users.UpdatePassword(existing.Id, PasswordHasher.Hash(req.Password));
 
-                // Atualiza o nome se veio no cadastro
                 if (!string.IsNullOrWhiteSpace(req.Name))
                     _users.UpdateProfile(existing.Id, new UserProfileDto
                     {
@@ -116,12 +111,7 @@ namespace Maryar.Api.Controllers
             }
             catch (Exception ex)
             {
-                return Content(HttpStatusCode.InternalServerError, new
-                {
-                    error = ex.Message,
-                    tipo  = ex.GetType().Name,
-                    stack = ex.StackTrace
-                });
+                return Content(HttpStatusCode.InternalServerError, new { error = ex.Message });
             }
         }
 
@@ -134,8 +124,10 @@ namespace Maryar.Api.Controllers
                     return Ok();
 
                 var user = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
+
+                // Sempre retorna Ok() — não revela se o e-mail existe ou não
                 if (user == null)
-                    return Ok(); // não revela se e-mail existe
+                    return Ok();
 
                 _resets.InvalidarAnteriores(user.Id.ToString());
 
@@ -159,19 +151,10 @@ namespace Maryar.Api.Controllers
                 {
                     _email.EnviarLinkRedefinicao(user.Email, link);
                 }
-                catch (Exception emailEx)
+                catch
                 {
-                    // expõe erro SMTP para diagnóstico — remover após corrigir
-                    return Content(HttpStatusCode.InternalServerError, new
-                    {
-                        error = "Falha ao enviar e-mail: " + emailEx.Message,
-                        inner = emailEx.InnerException != null ? emailEx.InnerException.Message : null,
-                        smtp  = new
-                        {
-                            host = System.Configuration.ConfigurationManager.AppSettings["Email.Host"],
-                            port = System.Configuration.ConfigurationManager.AppSettings["Email.Port"]
-                        }
-                    });
+                    // Falha no envio de e-mail não é exposta ao cliente.
+                    // Registre o erro nos logs do servidor para diagnóstico.
                 }
 
                 return Ok();
@@ -195,10 +178,7 @@ namespace Maryar.Api.Controllers
                 if (tokenEntity == null || tokenEntity.Used || tokenEntity.ExpiresAt < DateTime.UtcNow)
                     return Content(HttpStatusCode.BadRequest, new { message = "Link inválido ou expirado. Solicite um novo link." });
 
-                var novoHash = PasswordHasher.Hash(req.NewPassword);
-
-                _users.UpdatePassword(Guid.Parse(tokenEntity.UserId), novoHash);
-
+                _users.UpdatePassword(Guid.Parse(tokenEntity.UserId), PasswordHasher.Hash(req.NewPassword));
                 _resets.MarcarComoUsado(tokenEntity.Id);
 
                 return Ok();
