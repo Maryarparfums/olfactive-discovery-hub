@@ -1,62 +1,73 @@
-[ApiController]
-[Route("api/users")]
-[Authorize]
-public class UsersController : ControllerBase
+using System.Net;
+using System.Web.Http;
+using Maryar.Api.Dtos;
+using Maryar.Api.Infrastructure;
+using Maryar.Api.Repositories.Interfaces;
+using Maryar.Api.Repositories.MySql;
+
+namespace Maryar.Api.Controllers
 {
-    private readonly IDbConnection _db; // MySqlConnection ou Dapper
-
-    public UsersController(IDbConnection db)
+    [RoutePrefix("users")]
+    public class UsersController : ApiController
     {
-        _db = db;
-    }
+        private readonly IUserRepository _users;
 
-    // GET /api/users/me
-    [HttpGet("me")]
-    public async Task<IActionResult> GetMe()
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        public UsersController()
+            : this(new UserRepository()) { }
 
-        var user = await _db.QueryFirstOrDefaultAsync<UserProfileDto>(
-            @"SELECT name, email, phone, cpf, cep, logradouro, numero,
-                     complemento, bairro, cidade, estado
-              FROM users WHERE id = @Id",
-            new { Id = userId });
+        public UsersController(IUserRepository users)
+        {
+            _users = users;
+        }
 
-        if (user == null) return NotFound(new { error = "Usuário não encontrado." });
+        // GET /api/users/me
+        [HttpGet, Route("me")]
+        [JwtAuth]
+        public IHttpActionResult GetMe()
+        {
+            var userId = JwtAuthAttribute.CurrentUserId();
+            if (!userId.HasValue)
+                return Content(HttpStatusCode.Unauthorized, new { error = "Não autenticado." });
 
-        return Ok(user);
-    }
+            var user = _users.GetById(userId.Value);
+            if (user == null)
+                return NotFound();
 
-    // PUT /api/users/me
-    [HttpPut("me")]
-    public async Task<IActionResult> UpdateMe([FromBody] UserProfileDto dto)
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-
-        var rows = await _db.ExecuteAsync(
-            @"UPDATE users SET
-                name         = @Name,
-                email        = @Email,
-                phone        = @Phone,
-                cpf          = @Cpf,
-                cep          = @Cep,
-                logradouro   = @Logradouro,
-                numero       = @Numero,
-                complemento  = @Complemento,
-                bairro       = @Bairro,
-                cidade       = @Cidade,
-                estado       = @Estado
-              WHERE id = @Id",
-            new
+            return Ok(new UserProfileDto
             {
-                dto.Name, dto.Email, dto.Phone, dto.Cpf,
-                dto.Cep, dto.Logradouro, dto.Numero,
-                dto.Complemento, dto.Bairro, dto.Cidade, dto.Estado,
-                Id = userId
+                Name        = user.Name,
+                Email       = user.Email,
+                Phone       = user.Phone,
+                Cpf         = user.Cpf,
+                Cep         = user.Cep,
+                Logradouro  = user.Logradouro,
+                Numero      = user.Numero,
+                Complemento = user.Complemento,
+                Bairro      = user.Bairro,
+                Cidade      = user.Cidade,
+                Estado      = user.Estado
             });
+        }
 
-        if (rows == 0) return NotFound(new { error = "Usuário não encontrado." });
+        // PUT /api/users/me
+        [HttpPut, Route("me")]
+        [JwtAuth]
+        public IHttpActionResult UpdateMe([FromBody] UserProfileDto dto)
+        {
+            if (dto == null)
+                return Content(HttpStatusCode.BadRequest, new { error = "Dados inválidos." });
 
-        return Ok(new { message = "Perfil atualizado com sucesso." });
+            var userId = JwtAuthAttribute.CurrentUserId();
+            if (!userId.HasValue)
+                return Content(HttpStatusCode.Unauthorized, new { error = "Não autenticado." });
+
+            var user = _users.GetById(userId.Value);
+            if (user == null)
+                return NotFound();
+
+            _users.UpdateProfile(userId.Value, dto);
+
+            return Ok(new { message = "Perfil atualizado com sucesso." });
+        }
     }
 }
