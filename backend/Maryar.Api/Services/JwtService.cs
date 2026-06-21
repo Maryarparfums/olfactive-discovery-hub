@@ -1,4 +1,5 @@
 using System;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Newtonsoft.Json.Linq;
@@ -17,8 +18,14 @@ namespace Maryar.Api.Services
             var audience = AppConfig.Get("Maryar:JwtAudience");
             var mins = AppConfig.GetInt("Maryar:JwtExpirationMinutes", 1440);
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var key = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(secret)
+            );
+
+            var creds = new SigningCredentials(
+                key,
+                SecurityAlgorithms.HmacSha256
+            );
 
             expiresAt = DateTime.UtcNow.AddMinutes(mins);
 
@@ -28,16 +35,17 @@ namespace Maryar.Api.Services
                 claims: new[]
                 {
                     new Claim(ClaimTypes.NameIdentifier, u.Id.ToString()),
-                    new Claim(ClaimTypes.Email, u.Email),
-                    new Claim(ClaimTypes.Name, u.Name ?? string.Empty),
-                    new Claim(ClaimTypes.Role, u.Role ?? "customer"),
+                    new Claim(ClaimTypes.Email, u.Email ?? ""),
+                    new Claim(ClaimTypes.Name, u.Name ?? ""),
+                    new Claim(ClaimTypes.Role, u.Role ?? "customer")
                 },
                 notBefore: DateTime.UtcNow,
                 expires: expiresAt,
                 signingCredentials: creds
             );
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
+            return new JwtSecurityTokenHandler()
+                .WriteToken(token);
         }
 
 
@@ -50,18 +58,22 @@ namespace Maryar.Api.Services
             if (parts.Length != 3)
                 throw new Exception("JWT inválido.");
 
+
             var header = parts[0];
             var payload = parts[1];
             var signature = parts[2];
 
 
             // valida assinatura HS256
-            var data = Encoding.UTF8.GetBytes(header + "." + payload);
+            var data = Encoding.UTF8.GetBytes(
+                header + "." + payload
+            );
 
             using (var hmac = new System.Security.Cryptography.HMACSHA256(
                 Encoding.UTF8.GetBytes(secret)))
             {
                 var hash = hmac.ComputeHash(data);
+
                 var expected = Base64UrlEncode(hash);
 
                 if (expected != signature)
@@ -82,13 +94,46 @@ namespace Maryar.Api.Services
 
             if (exp != null)
             {
-                var expires =
-                    DateTimeOffset.FromUnixTimeSeconds(
-                        (long)exp
-                    ).UtcDateTime;
+                var expires = new DateTime(
+                    1970,
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    DateTimeKind.Utc
+                ).AddSeconds(
+                    (long)exp
+                );
 
                 if (expires < DateTime.UtcNow)
                     throw new Exception("Token expirado.");
+            }
+
+
+            // valida issuer
+            var issuer = obj["iss"];
+
+            var expectedIssuer =
+                AppConfig.Get("Maryar:JwtIssuer");
+
+            if (issuer != null &&
+                issuer.ToString() != expectedIssuer)
+            {
+                throw new Exception("Issuer inválido.");
+            }
+
+
+            // valida audience
+            var audience = obj["aud"];
+
+            var expectedAudience =
+                AppConfig.Get("Maryar:JwtAudience");
+
+            if (audience != null &&
+                audience.ToString() != expectedAudience)
+            {
+                throw new Exception("Audience inválida.");
             }
 
 
@@ -117,7 +162,10 @@ namespace Maryar.Api.Services
 
 
             return new ClaimsPrincipal(
-                new ClaimsIdentity(claims, "JWT")
+                new ClaimsIdentity(
+                    claims,
+                    "JWT"
+                )
             );
         }
 
@@ -127,6 +175,7 @@ namespace Maryar.Api.Services
             string s = input
                 .Replace('-', '+')
                 .Replace('_', '/');
+
 
             switch (s.Length % 4)
             {
@@ -138,6 +187,7 @@ namespace Maryar.Api.Services
                     s += "=";
                     break;
             }
+
 
             return Convert.FromBase64String(s);
         }
