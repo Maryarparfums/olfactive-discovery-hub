@@ -36,17 +36,54 @@ namespace Maryar.Api.Controllers
                 || string.IsNullOrWhiteSpace(req.Password) || req.Password.Length < 8)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados inválidos (senha mínima 8 caracteres)." });
 
-            if (_users.GetByEmail(req.Email) != null)
-                return Content(HttpStatusCode.Conflict, new { error = "E-mail já cadastrado." });
+            var existing = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
 
-            var user = new User
+            if (existing != null && !string.IsNullOrEmpty(existing.PasswordHash))
             {
-                Email        = req.Email.Trim().ToLowerInvariant(),
-                Name         = req.Name?.Trim(),
-                PasswordHash = PasswordHasher.Hash(req.Password),
-                Role         = "customer"
-            };
-            user.Id = _users.Create(user);
+                // Conta completa já existe → não permite duplicar
+                return Content(HttpStatusCode.Conflict, new { error = "E-mail já cadastrado." });
+            }
+
+            User user;
+
+            if (existing != null && string.IsNullOrEmpty(existing.PasswordHash))
+            {
+                // Conta criada automaticamente no checkout (sem senha) → apenas ativa com a nova senha
+                var novoHash = PasswordHasher.Hash(req.Password);
+                _users.UpdatePassword(existing.Id, novoHash);
+
+                // Atualiza o nome se veio no cadastro
+                if (!string.IsNullOrWhiteSpace(req.Name))
+                    _users.UpdateProfile(existing.Id, new UserProfileDto
+                    {
+                        Name        = req.Name.Trim(),
+                        Email       = existing.Email,
+                        Phone       = existing.Phone,
+                        Cpf         = existing.Cpf,
+                        Cep         = existing.Cep,
+                        Logradouro  = existing.Logradouro,
+                        Numero      = existing.Numero,
+                        Complemento = existing.Complemento,
+                        Bairro      = existing.Bairro,
+                        Cidade      = existing.Cidade,
+                        Estado      = existing.Estado
+                    });
+
+                user = _users.GetByEmail(existing.Email);
+            }
+            else
+            {
+                // Cadastro novo do zero
+                user = new User
+                {
+                    Email        = req.Email.Trim().ToLowerInvariant(),
+                    Name         = req.Name?.Trim(),
+                    PasswordHash = PasswordHasher.Hash(req.Password),
+                    Role         = "customer"
+                };
+                user.Id = _users.Create(user);
+                user    = _users.GetByEmail(user.Email);
+            }
 
             DateTime exp;
             var token = _jwt.Issue(user, out exp);
