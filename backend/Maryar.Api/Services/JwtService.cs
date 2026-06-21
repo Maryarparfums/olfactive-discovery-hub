@@ -88,14 +88,14 @@ namespace Maryar.Api.Services
             var expectedAudience = AppConfig.Get("Maryar:JwtAudience");
             if (audience != null && audience.ToString() != expectedAudience)
                 throw new Exception("Audience inválida.");
-
-            // ✅ Lê claims usando os nomes CURTOS que o JwtSecurityTokenHandler grava no JSON
+           
+            // ✅ CORRETO — usa ClaimTypes que são iguais às URIs longas no payload
             var claims = new[]
             {
-                new Claim(ClaimTypes.NameIdentifier, (string)obj["sub"]         ?? ""),
-                new Claim(ClaimTypes.Email,          (string)obj["email"]        ?? ""),
-                new Claim(ClaimTypes.Name,           (string)obj["unique_name"]  ?? ""),
-                new Claim(ClaimTypes.Role,           (string)obj["role"]         ?? "customer")
+                new Claim(ClaimTypes.NameIdentifier, (string)obj[ClaimTypes.NameIdentifier] ?? ""),
+                new Claim(ClaimTypes.Email,          (string)obj[ClaimTypes.Email]          ?? ""),
+                new Claim(ClaimTypes.Name,           (string)obj[ClaimTypes.Name]           ?? ""),
+                new Claim(ClaimTypes.Role,           (string)obj[ClaimTypes.Role]           ?? "customer")
             };
 
             return new ClaimsPrincipal(new ClaimsIdentity(claims, "JWT"));
