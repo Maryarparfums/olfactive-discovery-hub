@@ -11,6 +11,6 @@ namespace Maryar.Api.Repositories.Interfaces
         Guid Create(User u);
         void UpdatePassword(Guid id, string passwordHash);
         void UpdateProfile(Guid id, UserProfileDto dto);
-        void UpsertByEmail(UserProfileDto dto);
+        Guid UpsertByEmail(UserProfileDto dto);
     }
 }
