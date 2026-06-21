@@ -1,46 +1,63 @@
 using System;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Threading;
-using System.Web.Http.Controllers;
-using System.Web.Http.Filters;
-using Maryar.Api.Services;
+using System.Text;
+using Maryar.Api.Infrastructure;
+using Maryar.Api.Models;
+using Microsoft.IdentityModel.Tokens;
 
-namespace Maryar.Api.Infrastructure
+namespace Maryar.Api.Services
 {
-    public class JwtAuthAttribute : AuthorizationFilterAttribute
+    public class JwtService
     {
-        public override void OnAuthorization(HttpActionContext ctx)
+        public string Issue(User u, out DateTime expiresAt)
         {
-            var auth = ctx.Request.Headers.Authorization;
-            if (auth == null || auth.Scheme != "Bearer" || string.IsNullOrWhiteSpace(auth.Parameter))
-            {
-                ctx.Response = ctx.Request.CreateResponse(HttpStatusCode.Unauthorized,
-                    new { error = "Token ausente." });
-                return;
-            }
+            var secret = AppConfig.Get("Maryar:JwtSecret");
+            var issuer = AppConfig.Get("Maryar:JwtIssuer");
+            var audience = AppConfig.Get("Maryar:JwtAudience");
+            var mins = AppConfig.GetInt("Maryar:JwtExpirationMinutes", 1440);
 
-            try
-            {
-                var principal = new JwtService().ValidateToken(auth.Parameter);
-                Thread.CurrentPrincipal = principal;
-            }
-            catch (Exception ex)
-            {
-                ctx.Response = ctx.Request.CreateResponse(HttpStatusCode.Unauthorized,
-                    new { error = "Token inválido.", detail = ex.Message });
-            }
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            expiresAt = DateTime.UtcNow.AddMinutes(mins);
+
+            var token = new JwtSecurityToken(
+                issuer: issuer,
+                audience: audience,
+                claims: new[]
+                {
+                    new Claim(ClaimTypes.NameIdentifier, u.Id.ToString()),
+                    new Claim(ClaimTypes.Email, u.Email),
+                    new Claim(ClaimTypes.Name, u.Name ?? string.Empty),
+                    new Claim(ClaimTypes.Role, u.Role ?? "customer"),
+                },
+                notBefore: DateTime.UtcNow,
+                expires: expiresAt,
+                signingCredentials: creds
+            );
+            return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
-        public static Guid? CurrentUserId()
+        public ClaimsPrincipal ValidateToken(string token)
         {
-            var p = Thread.CurrentPrincipal as ClaimsPrincipal;
-            if (p == null) return null;
-            var sub = p.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
-            Guid id;
-            return sub != null && Guid.TryParse(sub.Value, out id) ? id : (Guid?)null;
+            var secret = AppConfig.Get("Maryar:JwtSecret");
+            var issuer = AppConfig.Get("Maryar:JwtIssuer");
+            var audience = AppConfig.Get("Maryar:JwtAudience");
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+            var parameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = key,
+                ValidateIssuer = true,
+                ValidIssuer = issuer,
+                ValidateAudience = true,
+                ValidAudience = audience,
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromSeconds(30)
+            };
+            SecurityToken _;
+            return new JwtSecurityTokenHandler().ValidateToken(token, parameters, out _);
         }
     }
 }
