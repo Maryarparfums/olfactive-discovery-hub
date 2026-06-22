@@ -113,6 +113,7 @@
     <Compile Include="Models\PasswordResetToken.cs" />
     <Compile Include="Models\PaginaEstatica.cs" />
     <Compile Include="Models\FaqItem.cs" />
+    <Compile Include="Models\Ocasiao.cs" />
     <Compile Include="Dtos\ProductDtos.cs" />
     <Compile Include="Dtos\CartDtos.cs" />
     <Compile Include="Dtos\CheckoutDtos.cs" />
@@ -127,6 +128,7 @@
     <Compile Include="Repositories\Interfaces\IUserRepository.cs" />
     <Compile Include="Repositories\Interfaces\IPasswordResetRepository.cs" />
     <Compile Include="Repositories\Interfaces\IPaginaRepository.cs" />
+    <Compile Include="Repositories\Interfaces\IOcasiaoRepository.cs" />
     <Compile Include="Repositories\MySql\ProductRepository.cs" />
     <Compile Include="Repositories\MySql\BrandRepository.cs" />
     <Compile Include="Repositories\MySql\FamilyRepository.cs" />
@@ -136,6 +138,7 @@
     <Compile Include="Repositories\MySql\UserRepository.cs" />
     <Compile Include="Repositories\MySql\PasswordResetRepository.cs" />
     <Compile Include="Repositories\MySql\PaginaRepository.cs" />
+    <Compile Include="Repositories\MySql\OcasiaoRepository.cs" />
     <Compile Include="Services\PasswordHasher.cs" />
     <Compile Include="Services\JwtService.cs" />
     <Compile Include="Services\HmacValidator.cs" />
@@ -152,6 +155,7 @@
     <Compile Include="Controllers\AuthController.cs" />
     <Compile Include="Controllers\UsersController.cs" />
     <Compile Include="Controllers\PaginasController.cs" />
+    <Compile Include="Controllers\OcasioesController.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
