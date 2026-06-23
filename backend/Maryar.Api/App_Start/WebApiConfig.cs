@@ -65,6 +65,12 @@ namespace Maryar.Api
                 routeTemplate: "{controller}/{id}",
                 defaults: new { id = RouteParameter.Optional }
             );
+
+            config.Routes.MapHttpRoute(
+                name: "AuthVerifyEmail",
+                routeTemplate: "auth/verifyemail",
+                defaults: new { controller = "Auth", action = "VerifyEmail" }
+            );
         }
     }
 }
