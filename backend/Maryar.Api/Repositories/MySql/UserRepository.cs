@@ -21,25 +21,26 @@ namespace Maryar.Api.Repositories.MySql
 
         private static User Map(IDataReader r) => new User
         {
-            Id           = Guid.Parse(r["id"].ToString()),
-            Email        = r["email"].ToString(),
-            Name         = r["name"].ToString(),
-            PasswordHash = r["password_hash"].ToString(),
-            Role         = r["role"].ToString(),
-            CreatedAt    = Convert.ToDateTime(r["created_at"]),
-            Phone        = Str(r, "phone"),
-            Cpf          = Str(r, "cpf"),
-            Cep          = Str(r, "cep"),
-            Logradouro   = Str(r, "logradouro"),
-            Numero       = Str(r, "numero"),
-            Complemento  = Str(r, "complemento"),
-            Bairro       = Str(r, "bairro"),
-            Cidade       = Str(r, "cidade"),
-            Estado       = Str(r, "estado")
+            Id            = Guid.Parse(r["id"].ToString()),
+            Email         = r["email"].ToString(),
+            Name          = r["name"].ToString(),
+            PasswordHash  = r["password_hash"].ToString(),
+            Role          = r["role"].ToString(),
+            CreatedAt     = Convert.ToDateTime(r["created_at"]),
+            EmailVerified = Convert.ToBoolean(r["email_verified"]),
+            Phone         = Str(r, "phone"),
+            Cpf           = Str(r, "cpf"),
+            Cep           = Str(r, "cep"),
+            Logradouro    = Str(r, "logradouro"),
+            Numero        = Str(r, "numero"),
+            Complemento   = Str(r, "complemento"),
+            Bairro        = Str(r, "bairro"),
+            Cidade        = Str(r, "cidade"),
+            Estado        = Str(r, "estado")
         };
 
         private const string SelectCols = @"
-            SELECT id, email, name, password_hash, role, created_at,
+            SELECT id, email, name, password_hash, role, created_at, email_verified,
                    phone, cpf, cep, logradouro, numero, complemento,
                    bairro, cidade, estado
             FROM users";
@@ -75,13 +76,14 @@ namespace Maryar.Api.Repositories.MySql
             using (var cmd = cn.CreateCommand())
             {
                 cmd.CommandText = @"
-                    INSERT INTO users (id, email, name, password_hash, role)
-                    VALUES (@id, @e, @n, @h, @r)";
+                    INSERT INTO users (id, email, name, password_hash, role, email_verified)
+                    VALUES (@id, @e, @n, @h, @r, @ev)";
                 cmd.Parameters.AddWithValue("@id", id.ToString());
                 cmd.Parameters.AddWithValue("@e",  u.Email.ToLowerInvariant());
                 cmd.Parameters.AddWithValue("@n",  u.Name);
                 cmd.Parameters.AddWithValue("@h",  u.PasswordHash);
                 cmd.Parameters.AddWithValue("@r",  string.IsNullOrEmpty(u.Role) ? "customer" : u.Role);
+                cmd.Parameters.AddWithValue("@ev", u.EmailVerified ? 1 : 0);
                 cmd.ExecuteNonQuery();
             }
             return id;
@@ -95,6 +97,17 @@ namespace Maryar.Api.Repositories.MySql
                 cmd.CommandText = "UPDATE users SET password_hash = @h WHERE id = @id";
                 cmd.Parameters.AddWithValue("@id", id.ToString());
                 cmd.Parameters.AddWithValue("@h",  passwordHash);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public void MarkEmailVerified(Guid id)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE users SET email_verified = 1 WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id", id.ToString());
                 cmd.ExecuteNonQuery();
             }
         }
@@ -138,7 +151,6 @@ namespace Maryar.Api.Repositories.MySql
         {
             using (var cn = _factory.Create())
             {
-                // Verifica se já existe conta com esse e-mail
                 Guid? existingId = null;
                 using (var cmd = cn.CreateCommand())
                 {
@@ -150,7 +162,6 @@ namespace Maryar.Api.Repositories.MySql
 
                 if (existingId.HasValue)
                 {
-                    // Conta existe → atualiza dados (não sobrescreve e-mail)
                     using (var cmd = cn.CreateCommand())
                     {
                         cmd.CommandText = @"
@@ -183,19 +194,17 @@ namespace Maryar.Api.Repositories.MySql
                 }
                 else
                 {
-                    // Conta não existe → cria sem senha (visitante que comprou)
                     using (var cmd = cn.CreateCommand())
                     {
                         cmd.CommandText = @"
                             INSERT INTO users
-                                (id, email, name, password_hash, role,
+                                (id, email, name, password_hash, role, email_verified,
                                  phone, cpf, cep, logradouro, numero,
                                  complemento, bairro, cidade, estado)
                             VALUES
-                                (@id, @email, @name, '', 'customer',
+                                (@id, @email, @name, '', 'customer', 1,
                                  @phone, @cpf, @cep, @logradouro, @numero,
                                  @complemento, @bairro, @cidade, @estado)";
-                    
                         var newId = Guid.NewGuid();
                         cmd.Parameters.AddWithValue("@id",          newId.ToString());
                         cmd.Parameters.AddWithValue("@email",       dto.Email.ToLowerInvariant());
