@@ -32,6 +32,11 @@ namespace Maryar.Api
                 defaults: new { controller = "Auth", action = "SignIn" }
             );
             config.Routes.MapHttpRoute(
+                name: "AuthChangePassword",
+                routeTemplate: "auth/changepassword",
+                defaults: new { controller = "Auth", action = "ChangePassword" }
+            );
+            config.Routes.MapHttpRoute(
                 name: "AuthForgotPassword",
                 routeTemplate: "auth/forgotpassword",
                 defaults: new { controller = "Auth", action = "ForgotPassword" }
