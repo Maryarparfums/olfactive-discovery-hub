@@ -38,14 +38,15 @@ namespace Maryar.Api.Controllers
 
             var existing = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
 
-            if (existing != null && !string.IsNullOrEmpty(existing.PasswordHash))
+            if (existing != null && !string.IsNullOrEmpty(existing.PasswordHash) && existing.EmailVerified)
                 return Content(HttpStatusCode.Conflict, new { error = "E-mail já cadastrado." });
 
-            User user;
+            Guid userId;
 
-            if (existing != null && string.IsNullOrEmpty(existing.PasswordHash))
+            if (existing != null)
             {
-                // Conta criada automaticamente no checkout (sem senha) → ativa com a nova senha
+                // Conta existente (criada no checkout ou cadastro pendente de verificação)
+                // → atualiza senha e dados, e reenvia verificação
                 _users.UpdatePassword(existing.Id, PasswordHasher.Hash(req.Password));
 
                 if (!string.IsNullOrWhiteSpace(req.Name))
@@ -64,29 +65,46 @@ namespace Maryar.Api.Controllers
                         Estado      = existing.Estado
                     });
 
-                user = _users.GetByEmail(existing.Email);
+                userId = existing.Id;
             }
             else
             {
-                // Cadastro novo do zero
-                user = new User
+                // Cadastro totalmente novo — email_verified = false
+                var newUser = new User
                 {
-                    Email        = req.Email.Trim().ToLowerInvariant(),
-                    Name         = req.Name?.Trim(),
-                    PasswordHash = PasswordHasher.Hash(req.Password),
-                    Role         = "customer"
+                    Email         = req.Email.Trim().ToLowerInvariant(),
+                    Name          = req.Name?.Trim(),
+                    PasswordHash  = PasswordHasher.Hash(req.Password),
+                    Role          = "customer",
+                    EmailVerified = false
                 };
-                user.Id = _users.Create(user);
-                user    = _users.GetByEmail(user.Email);
+                userId = _users.Create(newUser);
             }
 
-            DateTime exp;
-            var token = _jwt.Issue(user, out exp);
-            return Ok(new AuthResponse
+            // Gera token de verificação de e-mail
+            _resets.InvalidarAnteriores(userId.ToString(), "email_verification");
+
+            var bytes = new byte[32];
+            using (var rng = new RNGCryptoServiceProvider())
+                rng.GetBytes(bytes);
+            var tokenStr = BitConverter.ToString(bytes).Replace("-", "").ToLower();
+
+            _resets.Create(new PasswordResetToken
             {
-                UserId = user.Id, Name = user.Name, Email = user.Email,
-                Role = user.Role, Token = token, ExpiresAt = exp
+                UserId    = userId.ToString(),
+                Token     = tokenStr,
+                ExpiresAt = DateTime.UtcNow.AddHours(24),
+                Used      = false,
+                Type      = "email_verification"
             });
+
+            var urlBase = ConfigurationManager.AppSettings["App.Url"];
+            var link    = string.Format("{0}/confirmar-email?token={1}", urlBase, tokenStr);
+
+            try { _email.EnviarConfirmacaoEmail(req.Email.Trim().ToLowerInvariant(), link); }
+            catch { /* falha no envio não bloqueia o fluxo */ }
+
+            return Ok(new { message = "Verifique seu e-mail para ativar a conta." });
         }
 
         [HttpPost]
@@ -97,9 +115,17 @@ namespace Maryar.Api.Controllers
                 if (req == null || string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
                     return Content(HttpStatusCode.BadRequest, new { error = "Dados inválidos." });
 
-                var user = _users.GetByEmail(req.Email);
+                var user = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
+
                 if (user == null || !PasswordHasher.Verify(req.Password, user.PasswordHash))
                     return Content(HttpStatusCode.Unauthorized, new { error = "Credenciais inválidas." });
+
+                if (!user.EmailVerified)
+                    return Content(HttpStatusCode.Forbidden, new
+                    {
+                        error = "Confirme seu e-mail antes de fazer login. Verifique sua caixa de entrada.",
+                        code  = "EMAIL_NOT_VERIFIED"
+                    });
 
                 DateTime exp;
                 var token = _jwt.Issue(user, out exp);
@@ -116,6 +142,33 @@ namespace Maryar.Api.Controllers
         }
 
         [HttpPost]
+        public IHttpActionResult VerifyEmail([FromBody] VerifyEmailRequest req)
+        {
+            try
+            {
+                if (req == null || string.IsNullOrWhiteSpace(req.Token))
+                    return Content(HttpStatusCode.BadRequest, new { error = "Token inválido." });
+
+                var tokenEntity = _resets.GetByToken(req.Token);
+
+                if (tokenEntity == null
+                    || tokenEntity.Type != "email_verification"
+                    || tokenEntity.Used
+                    || tokenEntity.ExpiresAt < DateTime.UtcNow)
+                    return Content(HttpStatusCode.BadRequest, new { error = "Link inválido ou expirado. Faça o cadastro novamente." });
+
+                _users.MarkEmailVerified(Guid.Parse(tokenEntity.UserId));
+                _resets.MarcarComoUsado(tokenEntity.Id);
+
+                return Ok(new { message = "E-mail confirmado com sucesso! Faça login para acessar sua conta." });
+            }
+            catch (Exception ex)
+            {
+                return Content(HttpStatusCode.InternalServerError, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost]
         public IHttpActionResult ForgotPassword([FromBody] ForgotPasswordRequest req)
         {
             try
@@ -124,12 +177,9 @@ namespace Maryar.Api.Controllers
                     return Ok();
 
                 var user = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
+                if (user == null) return Ok();
 
-                // Sempre retorna Ok() — não revela se o e-mail existe ou não
-                if (user == null)
-                    return Ok();
-
-                _resets.InvalidarAnteriores(user.Id.ToString());
+                _resets.InvalidarAnteriores(user.Id.ToString(), "password_reset");
 
                 var bytes = new byte[32];
                 using (var rng = new RNGCryptoServiceProvider())
@@ -141,21 +191,15 @@ namespace Maryar.Api.Controllers
                     UserId    = user.Id.ToString(),
                     Token     = tokenStr,
                     ExpiresAt = DateTime.UtcNow.AddHours(1),
-                    Used      = false
+                    Used      = false,
+                    Type      = "password_reset"
                 });
 
                 var urlBase = ConfigurationManager.AppSettings["App.Url"];
                 var link    = string.Format("{0}/redefinir-senha?token={1}", urlBase, tokenStr);
 
-                try
-                {
-                    _email.EnviarLinkRedefinicao(user.Email, link);
-                }
-                catch
-                {
-                    // Falha no envio de e-mail não é exposta ao cliente.
-                    // Registre o erro nos logs do servidor para diagnóstico.
-                }
+                try { _email.EnviarLinkRedefinicao(user.Email, link); }
+                catch { }
 
                 return Ok();
             }
@@ -175,7 +219,10 @@ namespace Maryar.Api.Controllers
 
                 var tokenEntity = _resets.GetByToken(req.Token);
 
-                if (tokenEntity == null || tokenEntity.Used || tokenEntity.ExpiresAt < DateTime.UtcNow)
+                if (tokenEntity == null
+                    || tokenEntity.Type != "password_reset"
+                    || tokenEntity.Used
+                    || tokenEntity.ExpiresAt < DateTime.UtcNow)
                     return Content(HttpStatusCode.BadRequest, new { message = "Link inválido ou expirado. Solicite um novo link." });
 
                 _users.UpdatePassword(Guid.Parse(tokenEntity.UserId), PasswordHasher.Hash(req.NewPassword));
@@ -192,4 +239,5 @@ namespace Maryar.Api.Controllers
 
     public class ForgotPasswordRequest { public string Email { get; set; } }
     public class ResetPasswordRequest  { public string Token { get; set; } public string NewPassword { get; set; } }
+    public class VerifyEmailRequest    { public string Token { get; set; } }
 }
