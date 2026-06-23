@@ -10,6 +10,7 @@ namespace Maryar.Api.Models
         public string   PasswordHash { get; set; }
         public string   Role         { get; set; }
         public DateTime CreatedAt    { get; set; }
+        public bool EmailVerified { get; set; }
 
         // Dados pessoais
         public string Phone { get; set; }
