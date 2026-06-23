@@ -6,7 +6,7 @@ namespace Maryar.Api.Repositories.Interfaces
     {
         void Create(PasswordResetToken token);
         PasswordResetToken GetByToken(string token);
-        void InvalidarAnteriores(string userId);   // ← string
         void MarcarComoUsado(int id);
+        void InvalidarAnteriores(string userId, string type);
     }
 }
