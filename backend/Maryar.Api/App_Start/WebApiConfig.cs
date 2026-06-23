@@ -20,6 +20,7 @@ namespace Maryar.Api
 
             config.MapHttpAttributeRoutes();
 
+            // Auth
             config.Routes.MapHttpRoute(
                 name: "AuthSignUp",
                 routeTemplate: "auth/signup",
@@ -41,6 +42,18 @@ namespace Maryar.Api
                 defaults: new { controller = "Auth", action = "ResetPassword" }
             );
             config.Routes.MapHttpRoute(
+                name: "AuthVerifyEmail",
+                routeTemplate: "auth/verifyemail",
+                defaults: new { controller = "Auth", action = "VerifyEmail" }
+            );
+            config.Routes.MapHttpRoute(
+                name: "AuthResendVerification",
+                routeTemplate: "auth/resendverification",
+                defaults: new { controller = "Auth", action = "ResendVerification" }
+            );
+
+            // Produtos
+            config.Routes.MapHttpRoute(
                 name: "ProductsBySlug",
                 routeTemplate: "products/{slug}",
                 defaults: new { controller = "Products", action = "GetBySlug" }
@@ -50,6 +63,8 @@ namespace Maryar.Api
                 routeTemplate: "products",
                 defaults: new { controller = "Products" }
             );
+
+            // Brands e Families
             config.Routes.MapHttpRoute(
                 name: "BrandsList",
                 routeTemplate: "brands",
@@ -60,20 +75,12 @@ namespace Maryar.Api
                 routeTemplate: "families",
                 defaults: new { controller = "Families" }
             );
+
+            // Fallback genérico
             config.Routes.MapHttpRoute(
                 name: "DefaultApi",
                 routeTemplate: "{controller}/{id}",
                 defaults: new { id = RouteParameter.Optional }
-            );
-            config.Routes.MapHttpRoute(
-                name: "AuthVerifyEmail",
-                routeTemplate: "auth/verifyemail",
-                defaults: new { controller = "Auth", action = "VerifyEmail" }
-            );
-            config.Routes.MapHttpRoute(
-                name: "AuthResendVerification",
-                routeTemplate: "auth/resendverification",
-                defaults: new { controller = "Auth", action = "ResendVerification" }
             );
         }
     }
