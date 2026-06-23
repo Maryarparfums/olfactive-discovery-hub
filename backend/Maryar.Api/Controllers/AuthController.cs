@@ -1,6 +1,7 @@
 using System;
 using System.Configuration;
 using System.Net;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Web.Http;
 using Maryar.Api.Dtos;
@@ -152,6 +153,47 @@ namespace Maryar.Api.Controllers
             }
         }
 
+        // POST auth/changepassword
+        [HttpPost]
+        public IHttpActionResult ChangePassword([FromBody] ChangePasswordRequest req)
+        {
+            try
+            {
+                if (req == null
+                    || string.IsNullOrWhiteSpace(req.CurrentPassword)
+                    || string.IsNullOrWhiteSpace(req.NewPassword)
+                    || req.NewPassword.Length < 8)
+                    return Content(HttpStatusCode.BadRequest, new { error = "Dados inválidos." });
+
+                var authHeader = Request.Headers.Authorization;
+                if (authHeader == null || authHeader.Scheme != "Bearer" || string.IsNullOrWhiteSpace(authHeader.Parameter))
+                    return Content(HttpStatusCode.Unauthorized, new { error = "Não autenticado." });
+
+                ClaimsPrincipal principal;
+                try { principal = _jwt.ValidateToken(authHeader.Parameter); }
+                catch { return Content(HttpStatusCode.Unauthorized, new { error = "Token inválido ou expirado." }); }
+
+                var userIdStr = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrWhiteSpace(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+                    return Content(HttpStatusCode.Unauthorized, new { error = "Token inválido." });
+
+                var user = _users.GetById(userId);
+                if (user == null)
+                    return Content(HttpStatusCode.NotFound, new { error = "Usuário não encontrado." });
+
+                if (!PasswordHasher.Verify(req.CurrentPassword, user.PasswordHash))
+                    return Content(HttpStatusCode.BadRequest, new { error = "Senha atual incorreta." });
+
+                _users.UpdatePassword(userId, PasswordHasher.Hash(req.NewPassword));
+
+                return Ok(new { message = "Senha alterada com sucesso." });
+            }
+            catch (Exception ex)
+            {
+                return Content(HttpStatusCode.InternalServerError, new { error = ex.Message });
+            }
+        }
+
         // POST auth/verifyemail
         [HttpPost]
         public IHttpActionResult VerifyEmail([FromBody] VerifyEmailRequest req)
@@ -295,8 +337,9 @@ namespace Maryar.Api.Controllers
         }
     }
 
-    public class ForgotPasswordRequest     { public string Email       { get; set; } }
-    public class ResetPasswordRequest      { public string Token       { get; set; } public string NewPassword { get; set; } }
-    public class VerifyEmailRequest        { public string Token       { get; set; } }
-    public class ResendVerificationRequest { public string Email       { get; set; } }
+    public class ChangePasswordRequest     { public string CurrentPassword { get; set; } public string NewPassword     { get; set; } }
+    public class ForgotPasswordRequest     { public string Email           { get; set; } }
+    public class ResetPasswordRequest      { public string Token           { get; set; } public string NewPassword     { get; set; } }
+    public class VerifyEmailRequest        { public string Token           { get; set; } }
+    public class ResendVerificationRequest { public string Email           { get; set; } }
 }
