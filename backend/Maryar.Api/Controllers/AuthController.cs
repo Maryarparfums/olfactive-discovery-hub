@@ -46,8 +46,6 @@ namespace Maryar.Api.Controllers
 
             if (existing != null)
             {
-                // Conta existente (checkout sem senha, ou cadastro pendente de verificação)
-                // → atualiza senha e dados, reenvia verificação
                 _users.UpdatePassword(existing.Id, PasswordHasher.Hash(req.Password));
 
                 if (!string.IsNullOrWhiteSpace(req.Name))
@@ -70,7 +68,6 @@ namespace Maryar.Api.Controllers
             }
             else
             {
-                // Cadastro totalmente novo — email_verified = false
                 var newUser = new User
                 {
                     Email         = req.Email.Trim().ToLowerInvariant(),
@@ -82,7 +79,6 @@ namespace Maryar.Api.Controllers
                 userId = _users.Create(newUser);
             }
 
-            // Gera token de verificação de e-mail
             _resets.InvalidarAnteriores(userId.ToString(), "email_verification");
 
             var bytes = new byte[32];
@@ -103,7 +99,7 @@ namespace Maryar.Api.Controllers
             var link    = string.Format("{0}/confirmar-email?token={1}", urlBase, tokenStr);
 
             try { _email.EnviarConfirmacaoEmail(req.Email.Trim().ToLowerInvariant(), link); }
-            catch { /* falha no envio não bloqueia o fluxo */ }
+            catch { }
 
             return Ok(new { message = "Verifique seu e-mail para ativar a conta." });
         }
@@ -133,12 +129,21 @@ namespace Maryar.Api.Controllers
                 var token = _jwt.Issue(user, out exp);
                 return Ok(new AuthResponse
                 {
-                    UserId    = user.Id,
-                    Name      = user.Name,
-                    Email     = user.Email,
-                    Role      = user.Role,
-                    Token     = token,
-                    ExpiresAt = exp
+                    UserId      = user.Id,
+                    Name        = user.Name,
+                    Email       = user.Email,
+                    Role        = user.Role,
+                    Token       = token,
+                    ExpiresAt   = exp,
+                    Phone       = user.Phone,
+                    Cpf         = user.Cpf,
+                    Cep         = user.Cep,
+                    Logradouro  = user.Logradouro,
+                    Numero      = user.Numero,
+                    Complemento = user.Complemento,
+                    Bairro      = user.Bairro,
+                    Cidade      = user.Cidade,
+                    Estado      = user.Estado
                 });
             }
             catch (Exception ex)
@@ -186,7 +191,6 @@ namespace Maryar.Api.Controllers
 
                 var user = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
 
-                // Sempre retorna Ok — não revela se o e-mail existe
                 if (user == null || user.EmailVerified)
                     return Ok();
 
@@ -291,8 +295,8 @@ namespace Maryar.Api.Controllers
         }
     }
 
-    public class ForgotPasswordRequest    { public string Email       { get; set; } }
-    public class ResetPasswordRequest     { public string Token       { get; set; } public string NewPassword { get; set; } }
-    public class VerifyEmailRequest       { public string Token       { get; set; } }
-    public class ResendVerificationRequest { public string Email      { get; set; } }
+    public class ForgotPasswordRequest     { public string Email       { get; set; } }
+    public class ResetPasswordRequest      { public string Token       { get; set; } public string NewPassword { get; set; } }
+    public class VerifyEmailRequest        { public string Token       { get; set; } }
+    public class ResendVerificationRequest { public string Email       { get; set; } }
 }
