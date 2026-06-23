@@ -29,6 +29,7 @@ namespace Maryar.Api.Controllers
             _email  = email;
         }
 
+        // POST auth/signup
         [HttpPost]
         public IHttpActionResult SignUp([FromBody] SignUpRequest req)
         {
@@ -45,8 +46,8 @@ namespace Maryar.Api.Controllers
 
             if (existing != null)
             {
-                // Conta existente (criada no checkout ou cadastro pendente de verificação)
-                // → atualiza senha e dados, e reenvia verificação
+                // Conta existente (checkout sem senha, ou cadastro pendente de verificação)
+                // → atualiza senha e dados, reenvia verificação
                 _users.UpdatePassword(existing.Id, PasswordHasher.Hash(req.Password));
 
                 if (!string.IsNullOrWhiteSpace(req.Name))
@@ -107,6 +108,7 @@ namespace Maryar.Api.Controllers
             return Ok(new { message = "Verifique seu e-mail para ativar a conta." });
         }
 
+        // POST auth/signin
         [HttpPost]
         public IHttpActionResult SignIn([FromBody] SignInRequest req)
         {
@@ -131,8 +133,12 @@ namespace Maryar.Api.Controllers
                 var token = _jwt.Issue(user, out exp);
                 return Ok(new AuthResponse
                 {
-                    UserId = user.Id, Name = user.Name, Email = user.Email,
-                    Role = user.Role, Token = token, ExpiresAt = exp
+                    UserId    = user.Id,
+                    Name      = user.Name,
+                    Email     = user.Email,
+                    Role      = user.Role,
+                    Token     = token,
+                    ExpiresAt = exp
                 });
             }
             catch (Exception ex)
@@ -141,6 +147,7 @@ namespace Maryar.Api.Controllers
             }
         }
 
+        // POST auth/verifyemail
         [HttpPost]
         public IHttpActionResult VerifyEmail([FromBody] VerifyEmailRequest req)
         {
@@ -168,6 +175,52 @@ namespace Maryar.Api.Controllers
             }
         }
 
+        // POST auth/resendverification
+        [HttpPost]
+        public IHttpActionResult ResendVerification([FromBody] ResendVerificationRequest req)
+        {
+            try
+            {
+                if (req == null || string.IsNullOrWhiteSpace(req.Email))
+                    return Ok();
+
+                var user = _users.GetByEmail(req.Email.Trim().ToLowerInvariant());
+
+                // Sempre retorna Ok — não revela se o e-mail existe
+                if (user == null || user.EmailVerified)
+                    return Ok();
+
+                _resets.InvalidarAnteriores(user.Id.ToString(), "email_verification");
+
+                var bytes = new byte[32];
+                using (var rng = new RNGCryptoServiceProvider())
+                    rng.GetBytes(bytes);
+                var tokenStr = BitConverter.ToString(bytes).Replace("-", "").ToLower();
+
+                _resets.Create(new PasswordResetToken
+                {
+                    UserId    = user.Id.ToString(),
+                    Token     = tokenStr,
+                    ExpiresAt = DateTime.UtcNow.AddHours(24),
+                    Used      = false,
+                    Type      = "email_verification"
+                });
+
+                var urlBase = ConfigurationManager.AppSettings["App.Url"];
+                var link    = string.Format("{0}/confirmar-email?token={1}", urlBase, tokenStr);
+
+                try { _email.EnviarConfirmacaoEmail(user.Email, link); }
+                catch { }
+
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                return Content(HttpStatusCode.InternalServerError, new { error = ex.Message });
+            }
+        }
+
+        // POST auth/forgotpassword
         [HttpPost]
         public IHttpActionResult ForgotPassword([FromBody] ForgotPasswordRequest req)
         {
@@ -209,6 +262,7 @@ namespace Maryar.Api.Controllers
             }
         }
 
+        // POST auth/resetpassword
         [HttpPost]
         public IHttpActionResult ResetPassword([FromBody] ResetPasswordRequest req)
         {
@@ -237,7 +291,8 @@ namespace Maryar.Api.Controllers
         }
     }
 
-    public class ForgotPasswordRequest { public string Email { get; set; } }
-    public class ResetPasswordRequest  { public string Token { get; set; } public string NewPassword { get; set; } }
-    public class VerifyEmailRequest    { public string Token { get; set; } }
+    public class ForgotPasswordRequest    { public string Email       { get; set; } }
+    public class ResetPasswordRequest     { public string Token       { get; set; } public string NewPassword { get; set; } }
+    public class VerifyEmailRequest       { public string Token       { get; set; } }
+    public class ResendVerificationRequest { public string Email      { get; set; } }
 }
