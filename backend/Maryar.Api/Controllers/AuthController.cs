@@ -53,7 +53,6 @@ namespace Maryar.Api.Controllers
                     _users.UpdateProfile(existing.Id, new UserProfileDto
                     {
                         Name        = req.Name.Trim(),
-                        Email       = existing.Email,
                         Phone       = existing.Phone,
                         Cpf         = existing.Cpf,
                         Cep         = existing.Cep,
@@ -165,16 +164,11 @@ namespace Maryar.Api.Controllers
                     || req.NewPassword.Length < 8)
                     return Content(HttpStatusCode.BadRequest, new { error = "Dados inválidos." });
 
-                var authHeader = Request.Headers.Authorization;
-                if (authHeader == null || authHeader.Scheme != "Bearer" || string.IsNullOrWhiteSpace(authHeader.Parameter))
+                var principal = ValidateBearerToken();
+                if (principal == null)
                     return Content(HttpStatusCode.Unauthorized, new { error = "Não autenticado." });
 
-                ClaimsPrincipal principal;
-                try { principal = _jwt.ValidateToken(authHeader.Parameter); }
-                catch { return Content(HttpStatusCode.Unauthorized, new { error = "Token inválido ou expirado." }); }
-
-                var userIdStr = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrWhiteSpace(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+                if (!Guid.TryParse(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
                     return Content(HttpStatusCode.Unauthorized, new { error = "Token inválido." });
 
                 var user = _users.GetById(userId);
@@ -194,6 +188,66 @@ namespace Maryar.Api.Controllers
             }
         }
 
+        // POST api/auth/requestemailchange
+        [HttpPost, ActionName("requestemailchange")]
+        public IHttpActionResult RequestEmailChange([FromBody] RequestEmailChangeRequest req)
+        {
+            try
+            {
+                if (req == null || string.IsNullOrWhiteSpace(req.NewEmail))
+                    return Content(HttpStatusCode.BadRequest, new { error = "E-mail inválido." });
+
+                var principal = ValidateBearerToken();
+                if (principal == null)
+                    return Content(HttpStatusCode.Unauthorized, new { error = "Não autenticado." });
+
+                if (!Guid.TryParse(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
+                    return Content(HttpStatusCode.Unauthorized, new { error = "Token inválido." });
+
+                var user = _users.GetById(userId);
+                if (user == null)
+                    return Content(HttpStatusCode.NotFound, new { error = "Usuário não encontrado." });
+
+                var newEmail = req.NewEmail.Trim().ToLowerInvariant();
+
+                // Verifica se o novo e-mail já está em uso por outra conta
+                var existing = _users.GetByEmail(newEmail);
+                if (existing != null && existing.Id != userId)
+                    return Content(HttpStatusCode.Conflict, new { error = "Este e-mail já está em uso por outra conta." });
+
+                // Salva como pendente — NÃO altera o e-mail atual
+                _users.SetPendingEmail(userId, newEmail);
+
+                _resets.InvalidarAnteriores(userId.ToString(), "email_change");
+
+                var bytes = new byte[32];
+                using (var rng = new RNGCryptoServiceProvider())
+                    rng.GetBytes(bytes);
+                var tokenStr = BitConverter.ToString(bytes).Replace("-", "").ToLower();
+
+                _resets.Create(new PasswordResetToken
+                {
+                    UserId    = userId.ToString(),
+                    Token     = tokenStr,
+                    ExpiresAt = DateTime.UtcNow.AddHours(24),
+                    Used      = false,
+                    Type      = "email_change"
+                });
+
+                var urlBase = ConfigurationManager.AppSettings["App.Url"];
+                var link    = string.Format("{0}/confirmar-email?token={1}", urlBase, tokenStr);
+
+                try { _email.EnviarConfirmacaoEmail(newEmail, link); }
+                catch { }
+
+                return Ok(new { message = "Link de confirmação enviado para o novo e-mail." });
+            }
+            catch (Exception ex)
+            {
+                return Content(HttpStatusCode.InternalServerError, new { error = ex.Message });
+            }
+        }
+
         // POST api/auth/verifyemail
         [HttpPost, ActionName("verifyemail")]
         public IHttpActionResult VerifyEmail([FromBody] VerifyEmailRequest req)
@@ -205,16 +259,35 @@ namespace Maryar.Api.Controllers
 
                 var tokenEntity = _resets.GetByToken(req.Token);
 
-                if (tokenEntity == null
-                    || tokenEntity.Type != "email_verification"
-                    || tokenEntity.Used
-                    || tokenEntity.ExpiresAt < DateTime.UtcNow)
+                if (tokenEntity == null || tokenEntity.Used || tokenEntity.ExpiresAt < DateTime.UtcNow)
                     return Content(HttpStatusCode.BadRequest, new { error = "Link inválido ou expirado. Faça o cadastro novamente." });
 
-                _users.MarkEmailVerified(Guid.Parse(tokenEntity.UserId));
-                _resets.MarcarComoUsado(tokenEntity.Id);
+                var userId = Guid.Parse(tokenEntity.UserId);
 
-                return Ok(new { message = "E-mail confirmado com sucesso! Faça login para acessar sua conta." });
+                if (tokenEntity.Type == "email_change")
+                {
+                    // Confirmar troca: move pending_email → email
+                    var pendingEmail = _users.GetPendingEmail(userId);
+                    if (string.IsNullOrWhiteSpace(pendingEmail))
+                        return Content(HttpStatusCode.BadRequest, new { error = "Nenhuma alteração de e-mail pendente encontrada." });
+
+                    _users.UpdateEmail(userId, pendingEmail);
+                    _users.SetPendingEmail(userId, null);
+                    _users.MarkEmailVerified(userId);
+                    _resets.MarcarComoUsado(tokenEntity.Id);
+                    return Ok(new { message = "E-mail alterado e confirmado com sucesso! Faça login para continuar." });
+                }
+                else if (tokenEntity.Type == "email_verification")
+                {
+                    // Confirmação de cadastro novo
+                    _users.MarkEmailVerified(userId);
+                    _resets.MarcarComoUsado(tokenEntity.Id);
+                    return Ok(new { message = "E-mail confirmado com sucesso! Faça login para acessar sua conta." });
+                }
+                else
+                {
+                    return Content(HttpStatusCode.BadRequest, new { error = "Tipo de token inválido." });
+                }
             }
             catch (Exception ex)
             {
@@ -315,7 +388,7 @@ namespace Maryar.Api.Controllers
             try
             {
                 if (req == null || string.IsNullOrWhiteSpace(req.Token) || string.IsNullOrWhiteSpace(req.NewPassword))
-                    return Content(HttpStatusCode.BadRequest, new { message = "Dados inválidos." });
+                    return Content(HttpStatusCode.BadRequest, new { error = "Dados inválidos." });
 
                 var tokenEntity = _resets.GetByToken(req.Token);
 
@@ -323,7 +396,7 @@ namespace Maryar.Api.Controllers
                     || tokenEntity.Type != "password_reset"
                     || tokenEntity.Used
                     || tokenEntity.ExpiresAt < DateTime.UtcNow)
-                    return Content(HttpStatusCode.BadRequest, new { message = "Link inválido ou expirado. Solicite um novo link." });
+                    return Content(HttpStatusCode.BadRequest, new { error = "Link inválido ou expirado. Solicite um novo link." });
 
                 _users.UpdatePassword(Guid.Parse(tokenEntity.UserId), PasswordHasher.Hash(req.NewPassword));
                 _resets.MarcarComoUsado(tokenEntity.Id);
@@ -335,11 +408,23 @@ namespace Maryar.Api.Controllers
                 return Content(HttpStatusCode.InternalServerError, new { error = ex.Message });
             }
         }
+
+        // Helper: lê e valida o Bearer token do header Authorization
+        private ClaimsPrincipal ValidateBearerToken()
+        {
+            var authHeader = Request.Headers.Authorization;
+            if (authHeader == null || authHeader.Scheme != "Bearer" || string.IsNullOrWhiteSpace(authHeader.Parameter))
+                return null;
+            try { return _jwt.ValidateToken(authHeader.Parameter); }
+            catch { return null; }
+        }
     }
 
-    public class ChangePasswordRequest     { public string CurrentPassword { get; set; } public string NewPassword { get; set; } }
-    public class ForgotPasswordRequest     { public string Email           { get; set; } }
-    public class ResetPasswordRequest      { public string Token           { get; set; } public string NewPassword { get; set; } }
-    public class VerifyEmailRequest        { public string Token           { get; set; } }
-    public class ResendVerificationRequest { public string Email           { get; set; } }
+    // ── DTOs de request ────────────────────────────────────────────────────────
+    public class ChangePasswordRequest      { public string CurrentPassword { get; set; } public string NewPassword { get; set; } }
+    public class RequestEmailChangeRequest  { public string NewEmail        { get; set; } }
+    public class ForgotPasswordRequest      { public string Email           { get; set; } }
+    public class ResetPasswordRequest       { public string Token           { get; set; } public string NewPassword { get; set; } }
+    public class VerifyEmailRequest         { public string Token           { get; set; } }
+    public class ResendVerificationRequest  { public string Email           { get; set; } }
 }
