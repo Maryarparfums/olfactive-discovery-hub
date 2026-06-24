@@ -87,6 +87,11 @@ namespace Maryar.Api
                 routeTemplate: "{controller}/{id}",
                 defaults: new { id = RouteParameter.Optional }
             );
+            config.Routes.MapHttpRoute(
+                name: "AuthRequestEmailChange",
+                routeTemplate: "auth/requestemailchange",
+                defaults: new { controller = "Auth", action = "RequestEmailChange" }
+            );
         }
     }
 }
