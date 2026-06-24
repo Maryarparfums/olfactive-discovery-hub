@@ -13,5 +13,7 @@ namespace Maryar.Api.Repositories.Interfaces
         void UpdateProfile(Guid id, UserProfileDto dto);
         Guid UpsertByEmail(UserProfileDto dto);
         void MarkEmailVerified(Guid id);
+        void SetPendingEmail(Guid userId, string pendingEmail);
+        string GetPendingEmail(Guid userId);
     }
 }
