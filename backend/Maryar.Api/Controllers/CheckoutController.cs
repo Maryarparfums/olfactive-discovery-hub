@@ -52,7 +52,6 @@ namespace Maryar.Api.Controllers
             return _carts.GetOrCreate(userId, token).Id;
         }
 
-        // Tenta validar o JWT se presente no header, sem bloquear a requisição se ausente.
         private void TryAuthenticateRequest()
         {
             var auth = Request.Headers.Authorization;
@@ -69,6 +68,8 @@ namespace Maryar.Api.Controllers
         [HttpPost, Route("")]
         public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
         {
+            TryAuthenticateRequest(); // ← CORREÇÃO: autentica o JWT antes de qualquer verificação
+
             if (req?.Customer == null || req.Shipping == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
 
@@ -99,10 +100,6 @@ namespace Maryar.Api.Controllers
             pricing.ShippingFee = req.ShippingOption.Price;
             pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
 
-            // Salva/atualiza os dados do cliente ANTES de criar o pedido,
-            // garantindo que o UserId fique vinculado desde o início.
-            // Logado  → atualiza pelo ID.
-            // Visitante → busca pelo e-mail; atualiza se existir, cria se não existir.
             var profileDto = new UserProfileDto
             {
                 Name        = req.Customer.Name,
@@ -122,11 +119,14 @@ namespace Maryar.Api.Controllers
             Guid userId;
             if (currentUserId.HasValue)
             {
+                // Usuário logado: atualiza perfil pelo ID (sem alterar o e-mail — troca de e-mail
+                // passa pelo fluxo requestemailchange/verifyemail)
                 userId = currentUserId.Value;
                 _users.UpdateProfile(userId, profileDto);
             }
             else
             {
+                // Visitante: busca pelo e-mail; atualiza se existir, cria se não existir
                 userId = _users.UpsertByEmail(profileDto);
             }
 
@@ -179,7 +179,7 @@ namespace Maryar.Api.Controllers
                         Message       = "PIX gerado com sucesso."
                     });
                 }
-                else // credit_card
+                else
                 {
                     var installments = req.Installments < 1 ? 1 : req.Installments;
                     var card = await _asaas.CreateCreditCardAsync(
