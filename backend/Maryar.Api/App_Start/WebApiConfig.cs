@@ -56,6 +56,11 @@ namespace Maryar.Api
                 routeTemplate: "auth/resendverification",
                 defaults: new { controller = "Auth", action = "ResendVerification" }
             );
+            config.Routes.MapHttpRoute(
+                name: "AuthRequestEmailChange",
+                routeTemplate: "auth/requestemailchange",
+                defaults: new { controller = "Auth", action = "RequestEmailChange" }
+            );
 
             // Produtos
             config.Routes.MapHttpRoute(
@@ -81,16 +86,11 @@ namespace Maryar.Api
                 defaults: new { controller = "Families" }
             );
 
-            // Fallback genérico
+            // Fallback genérico — deve ser sempre o último
             config.Routes.MapHttpRoute(
                 name: "DefaultApi",
                 routeTemplate: "{controller}/{id}",
                 defaults: new { id = RouteParameter.Optional }
-            );
-            config.Routes.MapHttpRoute(
-                name: "AuthRequestEmailChange",
-                routeTemplate: "auth/requestemailchange",
-                defaults: new { controller = "Auth", action = "RequestEmailChange" }
             );
         }
     }
