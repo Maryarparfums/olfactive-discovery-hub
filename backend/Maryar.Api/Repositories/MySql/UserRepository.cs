@@ -112,6 +112,46 @@ namespace Maryar.Api.Repositories.MySql
             }
         }
 
+        // Atualiza apenas o e-mail — usado após confirmação de troca
+        public void UpdateEmail(Guid id, string newEmail)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE users SET email = @email WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id",    id.ToString());
+                cmd.Parameters.AddWithValue("@email", newEmail.ToLowerInvariant());
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        // Grava o novo e-mail como pendente (sem sobrescrever o atual)
+        public void SetPendingEmail(Guid id, string pendingEmail)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE users SET pending_email = @pe WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id", id.ToString());
+                cmd.Parameters.AddWithValue("@pe", (object)pendingEmail ?? DBNull.Value);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        // Retorna o e-mail pendente de confirmação, ou null se não houver
+        public string GetPendingEmail(Guid id)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT pending_email FROM users WHERE id = @id LIMIT 1";
+                cmd.Parameters.AddWithValue("@id", id.ToString());
+                var result = cmd.ExecuteScalar();
+                return result == DBNull.Value ? null : result as string;
+            }
+        }
+
+        // Atualiza perfil — NÃO altera o e-mail (troca de e-mail vai pelo fluxo RequestEmailChange)
         public void UpdateProfile(Guid id, UserProfileDto dto)
         {
             using (var cn = _factory.Create())
@@ -120,7 +160,6 @@ namespace Maryar.Api.Repositories.MySql
                 cmd.CommandText = @"
                     UPDATE users SET
                         name        = @name,
-                        email       = @email,
                         phone       = @phone,
                         cpf         = @cpf,
                         cep         = @cep,
@@ -133,7 +172,6 @@ namespace Maryar.Api.Repositories.MySql
                     WHERE id = @id";
                 cmd.Parameters.AddWithValue("@id",          id.ToString());
                 cmd.Parameters.AddWithValue("@name",        dto.Name);
-                cmd.Parameters.AddWithValue("@email",       dto.Email);
                 cmd.Parameters.AddWithValue("@phone",       (object)dto.Phone       ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@cpf",         (object)dto.Cpf         ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@cep",         (object)dto.Cep         ?? DBNull.Value);
