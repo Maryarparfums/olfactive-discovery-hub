@@ -155,7 +155,7 @@ namespace Maryar.Api.Services
               <table width='100%' cellpadding='0' cellspacing='0' border='0'>
                 <tr>
                   <td style='padding:48px 48px 40px;'>
-                    <p style='margin:0 0 8px 0;font-family:Arial,Helvetica,sans-serif;font-size:9px;letter-spacing:0.25em;text-transform:uppercase;color:#b0a89e;'>Bem-vinda</p>
+                    <p style='margin:0 0 8px 0;font-family:Arial,Helvetica,sans-serif;font-size:9px;letter-spacing:0.25em;text-transform:uppercase;color:#b0a89e;'>Bem-vindo(a)</p>
                     <h1 style='margin:0 0 32px 0;font-family:Georgia,""Times New Roman"",serif;font-size:26px;font-weight:normal;font-style:italic;color:#1a1a1a;line-height:1.3;'>
                       Confirme seu e-mail
                     </h1>
@@ -181,7 +181,7 @@ namespace Maryar.Api.Services
                         <td style='padding:12px 16px;'>
                           <p style='margin:0;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.6;color:#999999;'>
                             Este link expira em <strong style='color:#777777;'>24 horas</strong>.
-                            Se você não criou uma conta na Maryar, ignore este e-mail.
+                            Se você não criou uma conta na Maryar, ou não solicitou alteração de e-mail, ignore esta mensagem.
                           </p>
                         </td>
                       </tr>
