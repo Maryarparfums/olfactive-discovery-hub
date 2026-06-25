@@ -9,6 +9,7 @@ namespace Maryar.Api.Dtos
       public string  Id       { get; set; }
       public int     VolumeMl { get; set; }
       public decimal Price    { get; set; }
+      public string  ImageUrl { get; set; }   // ← NOVO: foto da apresentação
       public int     StockQty { get; set; }
   }
 
