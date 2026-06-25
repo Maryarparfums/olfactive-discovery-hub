@@ -23,6 +23,8 @@ namespace Maryar.Api.Dtos
         public Dictionary<string, int> Estacao { get; set; }
         public Dictionary<string, int> Periodo { get; set; }
         public Dictionary<string, int> Ocasiao { get; set; }
+        public System.Collections.Generic.List<ProductVariantDto> Variants { get; set; }
+        = new System.Collections.Generic.List<ProductVariantDto>();
     }
     public class ProductDetailDto : ProductListItemDto
     {
@@ -32,6 +34,8 @@ namespace Maryar.Api.Dtos
         public int Projecao { get; set; }
         public string DuracaoHoras { get; set; }
         public List<string> Similares { get; set; }
+        public System.Collections.Generic.List<ProductVariantDto> Variants { get; set; }
+        = new System.Collections.Generic.List<ProductVariantDto>();
     }
     public class ProductQueryDto
     {
