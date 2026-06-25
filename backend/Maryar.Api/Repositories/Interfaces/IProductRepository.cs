@@ -5,13 +5,12 @@ using Maryar.Api.Models;
 
 namespace Maryar.Api.Repositories.Interfaces
 {
-    public interface IProductRepository
-    {
-        IEnumerable<Product> Query(ProductQueryDto q, out int total);
-        Product GetById(Guid id);
-        Product GetBySlug(string slug);
-        PerfumeDetails GetDetailsByProductId(Guid productId);
-        System.Collections.Generic.IEnumerable<Maryar.Api.Dtos.ProductVariantDto>
-    GetVariantsByProductId(string productId);
-    }
+  public interface IProductRepository
+  {
+      IEnumerable<Product> Query(ProductQueryDto q, out int total);
+      Product GetById(Guid id);
+      Product GetBySlug(string slug);
+      PerfumeDetails GetDetailsByProductId(Guid productId);
+      IEnumerable<ProductVariantDto> GetVariantsByProductId(Guid productId);
+  }
 }
