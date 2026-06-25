@@ -197,7 +197,7 @@ namespace Maryar.Api.Repositories.MySql
           using (var cmd = cn.CreateCommand())
           {
               cmd.CommandText = @"
-                  SELECT id, volume_ml, price, stock_qty
+                  SELECT id, volume_ml, price, image_url, stock_qty
                   FROM   product_variants
                   WHERE  product_id = @id
                     AND  active = 1
@@ -214,6 +214,7 @@ namespace Maryar.Api.Repositories.MySql
                           Id       = r["id"].ToString(),
                           VolumeMl = Convert.ToInt32(r["volume_ml"]),
                           Price    = Convert.ToDecimal(r["price"]),
+                          ImageUrl = r["image_url"] == DBNull.Value ? null : r["image_url"].ToString(),
                           StockQty = Convert.ToInt32(r["stock_qty"])
                       });
                   }
