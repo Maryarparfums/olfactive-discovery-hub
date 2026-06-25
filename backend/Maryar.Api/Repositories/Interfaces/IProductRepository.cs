@@ -11,5 +11,7 @@ namespace Maryar.Api.Repositories.Interfaces
         Product GetById(Guid id);
         Product GetBySlug(string slug);
         PerfumeDetails GetDetailsByProductId(Guid productId);
+        System.Collections.Generic.IEnumerable<Maryar.Api.Dtos.ProductVariantDto>
+    GetVariantsByProductId(string productId);
     }
 }
