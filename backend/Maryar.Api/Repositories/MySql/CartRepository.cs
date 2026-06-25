@@ -122,21 +122,37 @@ namespace Maryar.Api.Repositories.MySql
       }
 
       // ── GetItem ──────────────────────────────────────────────────────────
-      // Usa <=> (NULL-safe equals do MySQL) para diferenciar variantes
-      // Ex.: produto 10ml e produto 100ml são itens distintos no carrinho
+      // SQL construído dinamicamente para evitar problemas do MySql.Data
+      // com <=> e parâmetros nulos. Variantes diferentes = linhas separadas.
       public CartItem GetItem(Guid cartId, Guid productId, Guid? variantId)
       {
           using (var cn = _factory.Create())
           using (var cmd = cn.CreateCommand())
           {
-              cmd.CommandText =
-                  "SELECT id, cart_id, product_id, variant_id, volume_ml, quantity, unit_price " +
-                  "FROM cart_items " +
-                  "WHERE cart_id = @cid AND product_id = @pid AND (variant_id <=> @vid) " +
-                  "LIMIT 1";
-              cmd.Parameters.AddWithValue("@cid", cartId.ToString());
-              cmd.Parameters.AddWithValue("@pid", productId.ToString());
-              cmd.Parameters.AddWithValue("@vid", (object)(variantId?.ToString()) ?? DBNull.Value);
+              if (variantId.HasValue)
+              {
+                  // Produto com variante selecionada: compara UUID exato
+                  cmd.CommandText =
+                      "SELECT id, cart_id, product_id, variant_id, volume_ml, quantity, unit_price " +
+                      "FROM cart_items " +
+                      "WHERE cart_id = @cid AND product_id = @pid AND variant_id = @vid " +
+                      "LIMIT 1";
+                  cmd.Parameters.AddWithValue("@cid", cartId.ToString());
+                  cmd.Parameters.AddWithValue("@pid", productId.ToString());
+                  cmd.Parameters.AddWithValue("@vid", variantId.Value.ToString());
+              }
+              else
+              {
+                  // Produto sem variante: garante que só acha linha sem variante
+                  cmd.CommandText =
+                      "SELECT id, cart_id, product_id, variant_id, volume_ml, quantity, unit_price " +
+                      "FROM cart_items " +
+                      "WHERE cart_id = @cid AND product_id = @pid AND variant_id IS NULL " +
+                      "LIMIT 1";
+                  cmd.Parameters.AddWithValue("@cid", cartId.ToString());
+                  cmd.Parameters.AddWithValue("@pid", productId.ToString());
+              }
+
               using (var r = cmd.ExecuteReader())
               {
                   if (!r.Read()) return null;
