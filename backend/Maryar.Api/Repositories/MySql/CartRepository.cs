@@ -95,10 +95,12 @@ namespace Maryar.Api.Repositories.MySql
                   "SELECT ci.id, ci.cart_id, ci.product_id, ci.variant_id, ci.volume_ml, " +
                   "       ci.quantity, ci.unit_price, " +
                   "       p.slug AS product_slug, p.name AS product_name, " +
-                  "       p.image_url AS product_image, b.name AS brand_name " +
+                  "       COALESCE(pv.image_url, p.image_url) AS product_image, " +
+                  "       b.name AS brand_name " +
                   "FROM cart_items ci " +
-                  "INNER JOIN products  p ON p.id  = ci.product_id " +
-                  "INNER JOIN brands    b ON b.id  = p.brand_id " +
+                  "INNER JOIN products         p  ON p.id  = ci.product_id " +
+                  "INNER JOIN brands           b  ON b.id  = p.brand_id " +
+                  "LEFT  JOIN product_variants pv ON pv.id = ci.variant_id " +
                   "WHERE ci.cart_id = @cid";
               cmd.Parameters.AddWithValue("@cid", cartId.ToString());
               using (var r = cmd.ExecuteReader())
