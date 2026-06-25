@@ -5,108 +5,136 @@ using Maryar.Api.Dtos;
 using Maryar.Api.Repositories.Interfaces;
 using Maryar.Api.Repositories.MySql;
 using Newtonsoft.Json;
+
 namespace Maryar.Api.Controllers
 {
-    public class ProductsController : ApiController
-    {
-        private readonly IProductRepository _repo;
-        public ProductsController() : this(new ProductRepository()) { }
-        public ProductsController(IProductRepository repo) { _repo = repo; }
-        [HttpGet]
-        public IHttpActionResult List([FromUri] ProductQueryDto query)
-        {
-            if (query == null) query = new ProductQueryDto();
-            int total;
-            var products = _repo.Query(query, out total).ToList();
-            var items = products.Select(p =>
-            {
-                var item = new ProductListItemDto
-                {
-                    Id            = p.Id,
-                    Slug          = p.Slug,
-                    Name          = p.Name,
-                    Brand         = p.BrandName,
-                    Family        = p.FamilyName,
-                    Concentration = p.Concentration,
-                    VolumeMl      = p.VolumeMl,
-                    Price         = p.Price,
-                    ImageUrl      = p.ImageUrl,
-                    StockQty      = p.StockQty
-                };
-                var d = _repo.GetDetailsByProductId(p.Id);
-                if (d != null)
-                {
-                    item.Genero       = d.Genero;
-                    item.Status       = d.Status;
-                    item.Inspiracao   = d.Inspiracao;
-                    item.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
-                    item.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
-                    item.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
-                    item.Estacao      = Deserialize<Dictionary<string, int>>(d.EstacaoJson);
-                    item.Periodo      = Deserialize<Dictionary<string, int>>(d.PeriodoJson);
-                    item.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
-                }
-                return item;
-            }).ToList();
-            return Ok(new
-            {
-                total,
-                page     = query.Page < 1 ? 1 : query.Page,
-                pageSize = query.PageSize < 1 ? 24 : query.PageSize,
-                items
-            });
-        }
-        [HttpGet]
-        public IHttpActionResult GetBySlug(string slug)
-        {
-            var p = _repo.GetBySlug(slug);
-            if (p == null) return NotFound();
-            var dto = new ProductDetailDto
-            {
-                Id            = p.Id,
-                Slug          = p.Slug,
-                Name          = p.Name,
-                Brand         = p.BrandName,
-                Family        = p.FamilyName,
-                Concentration = p.Concentration,
-                VolumeMl      = p.VolumeMl,
-                Price         = p.Price,
-                StockQty      = p.StockQty,
-                Description   = p.Description,
-                ImageUrl      = p.ImageUrl,
-                DetailImageUrl = p.DetailImageUrl
-            };
-            try
-            {
-                var d = _repo.GetDetailsByProductId(p.Id);
-                if (d != null)
-                {
-                    dto.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
-                    dto.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
-                    dto.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
-                    dto.Estacao      = Deserialize<Dictionary<string, int>>(d.EstacaoJson);
-                    dto.Periodo      = Deserialize<Dictionary<string, int>>(d.PeriodoJson);
-                    dto.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
-                    dto.Similares    = Deserialize<List<string>>(d.SimilaresJson);
-                    dto.Fixacao      = d.Fixacao;
-                    dto.Projecao     = d.Projecao;
-                    dto.DuracaoHoras = d.DuracaoHoras;
-                    dto.Genero       = d.Genero;
-                    dto.Inspiracao   = d.Inspiracao;
-                    dto.Status       = d.Status;
-                }
-            }
-            catch (System.Exception ex)
-            {
-                dto.Description += "\n\nERRO: " + ex.ToString();
-            }
-            return Ok(dto);
-        }
-        private static T Deserialize<T>(string json) where T : new()
-        {
-            if (string.IsNullOrWhiteSpace(json)) return new T();
-            try { return JsonConvert.DeserializeObject<T>(json); }
-            catch { return new T(); }
-        }
-    }
+  public class ProductsController : ApiController
+  {
+      private readonly IProductRepository _repo;
+
+      public ProductsController() : this(new ProductRepository()) { }
+      public ProductsController(IProductRepository repo) { _repo = repo; }
+
+      // ──────────────────────────────────────────────────────────────────
+      // GET /api/products?page=1&pageSize=24
+      // Listagem do catálogo — agora inclui variants em cada item
+      // ──────────────────────────────────────────────────────────────────
+      [HttpGet]
+      public IHttpActionResult List([FromUri] ProductQueryDto query)
+      {
+          if (query == null) query = new ProductQueryDto();
+
+          int total;
+          var products = _repo.Query(query, out total).ToList();
+
+          var items = products.Select(p =>
+          {
+              var item = new ProductListItemDto
+              {
+                  Id            = p.Id,
+                  Slug          = p.Slug,
+                  Name          = p.Name,
+                  Brand         = p.BrandName,
+                  Family        = p.FamilyName,
+                  Concentration = p.Concentration,
+                  VolumeMl      = p.VolumeMl,
+                  Price         = p.Price,
+                  ImageUrl      = p.ImageUrl,
+                  StockQty      = p.StockQty
+              };
+
+              // Detalhes (notas, estação, etc.)
+              var d = _repo.GetDetailsByProductId(p.Id);
+              if (d != null)
+              {
+                  item.Genero       = d.Genero;
+                  item.Status       = d.Status;
+                  item.Inspiracao   = d.Inspiracao;
+                  item.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
+                  item.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
+                  item.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
+                  item.Estacao      = Deserialize<Dictionary<string, int>>(d.EstacaoJson);
+                  item.Periodo      = Deserialize<Dictionary<string, int>>(d.PeriodoJson);
+                  item.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
+              }
+
+              // ► NOVO: variantes de volume/preço
+              item.Variants = _repo.GetVariantsByProductId(p.Id).ToList();
+
+              return item;
+          }).ToList();
+
+          return Ok(new
+          {
+              total,
+              page     = query.Page < 1 ? 1 : query.Page,
+              pageSize = query.PageSize < 1 ? 24 : query.PageSize,
+              items
+          });
+      }
+
+      // ──────────────────────────────────────────────────────────────────
+      // GET /api/products/{slug}
+      // Detalhe do produto — agora inclui variants
+      // ──────────────────────────────────────────────────────────────────
+      [HttpGet]
+      public IHttpActionResult GetBySlug(string slug)
+      {
+          var p = _repo.GetBySlug(slug);
+          if (p == null) return NotFound();
+
+          var dto = new ProductDetailDto
+          {
+              Id             = p.Id,
+              Slug           = p.Slug,
+              Name           = p.Name,
+              Brand          = p.BrandName,
+              Family         = p.FamilyName,
+              Concentration  = p.Concentration,
+              VolumeMl       = p.VolumeMl,
+              Price          = p.Price,
+              StockQty       = p.StockQty,
+              Description    = p.Description,
+              ImageUrl       = p.ImageUrl,
+              DetailImageUrl = p.DetailImageUrl
+          };
+
+          try
+          {
+              var d = _repo.GetDetailsByProductId(p.Id);
+              if (d != null)
+              {
+                  dto.NotasTopo    = Deserialize<List<string>>(d.NotasTopoJson);
+                  dto.NotasCoracao = Deserialize<List<string>>(d.NotasCoracaoJson);
+                  dto.NotasBase    = Deserialize<List<string>>(d.NotasBaseJson);
+                  dto.Estacao      = Deserialize<Dictionary<string, int>>(d.EstacaoJson);
+                  dto.Periodo      = Deserialize<Dictionary<string, int>>(d.PeriodoJson);
+                  dto.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
+                  dto.Similares    = Deserialize<List<string>>(d.SimilaresJson);
+                  dto.Fixacao      = d.Fixacao;
+                  dto.Projecao     = d.Projecao;
+                  dto.DuracaoHoras = d.DuracaoHoras;
+                  dto.Genero       = d.Genero;
+                  dto.Inspiracao   = d.Inspiracao;
+                  dto.Status       = d.Status;
+              }
+          }
+          catch (System.Exception ex)
+          {
+              dto.Description += "\n\nERRO: " + ex.ToString();
+          }
+
+          // ► NOVO: variantes de volume/preço
+          dto.Variants = _repo.GetVariantsByProductId(p.Id).ToList();
+
+          return Ok(dto);
+      }
+
+      private static T Deserialize<T>(string json) where T : new()
+      {
+          if (string.IsNullOrWhiteSpace(json)) return new T();
+          try { return JsonConvert.DeserializeObject<T>(json); }
+          catch { return new T(); }
+      }
+  }
 }
