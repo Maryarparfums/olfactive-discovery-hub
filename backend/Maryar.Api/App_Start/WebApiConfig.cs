@@ -86,6 +86,12 @@ namespace Maryar.Api
                 defaults: new { controller = "Families" }
             );
 
+             config.Routes.MapHttpRoute(
+                name: "social-networks",
+                routeTemplate: "social-networks",
+                defaults: new { controller = "social-networks" }
+            );
+
             // Fallback genérico — deve ser sempre o último
             config.Routes.MapHttpRoute(
                 name: "DefaultApi",
