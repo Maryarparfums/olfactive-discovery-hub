@@ -156,6 +156,7 @@
     <Compile Include="Controllers\UsersController.cs" />
     <Compile Include="Controllers\PaginasController.cs" />
     <Compile Include="Controllers\OcasioesController.cs" />
+    <Compile Include="Controllers\FavoritesController.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
