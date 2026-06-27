@@ -1,7 +1,7 @@
-using System;
 using System.Collections.Generic;
 using System.Web.Http;
 using MySql.Data.MySqlClient;
+using Maryar.Api.Infrastructure;
 
 namespace Maryar.Api.Controllers
 {
@@ -15,11 +15,11 @@ namespace Maryar.Api.Controllers
         // ── GET /api/favorites ──────────────────────────────────────────
         // Retorna os slugs favoritados pelo usuário logado
         [HttpGet, Route("")]
-        [Authorize]
+        [JwtAuthAttribute]
         public IHttpActionResult Get()
         {
-            int userId = GetCurrentUserId();
-            if (userId == 0) return Unauthorized();
+            var userId = JwtAuthAttribute.CurrentUserId();
+            if (userId == null) return Unauthorized();
 
             var slugs = new List<string>();
 
@@ -30,7 +30,7 @@ namespace Maryar.Api.Controllers
                     "SELECT product_slug FROM user_favorites WHERE user_id = @uid ORDER BY created_at DESC",
                     conn))
                 {
-                    cmd.Parameters.AddWithValue("@uid", userId);
+                    cmd.Parameters.AddWithValue("@uid", userId.Value.ToString());
                     using (var reader = cmd.ExecuteReader())
                         while (reader.Read())
                             slugs.Add(reader.GetString("product_slug"));
@@ -43,11 +43,11 @@ namespace Maryar.Api.Controllers
         // ── POST /api/favorites/{slug} ──────────────────────────────────
         // Adiciona um favorito individual (usuário já logado)
         [HttpPost, Route("{slug}")]
-        [Authorize]
+        [JwtAuthAttribute]
         public IHttpActionResult Add(string slug)
         {
-            int userId = GetCurrentUserId();
-            if (userId == 0) return Unauthorized();
+            var userId = JwtAuthAttribute.CurrentUserId();
+            if (userId == null) return Unauthorized();
 
             if (string.IsNullOrWhiteSpace(slug)) return BadRequest();
 
@@ -58,7 +58,7 @@ namespace Maryar.Api.Controllers
                     INSERT IGNORE INTO user_favorites (user_id, product_slug, created_at)
                     VALUES (@uid, @slug, NOW())", conn))
                 {
-                    cmd.Parameters.AddWithValue("@uid",  userId);
+                    cmd.Parameters.AddWithValue("@uid",  userId.Value.ToString());
                     cmd.Parameters.AddWithValue("@slug", slug.Trim().ToLower());
                     cmd.ExecuteNonQuery();
                 }
@@ -71,14 +71,14 @@ namespace Maryar.Api.Controllers
         // Recebe array de slugs do localStorage e faz merge com o banco.
         // Chamado automaticamente quando o cliente faz login.
         [HttpPost, Route("sync")]
-        [Authorize]
+        [JwtAuthAttribute]
         public IHttpActionResult Sync([FromBody] SyncRequest body)
         {
             if (body?.Slugs == null || body.Slugs.Count == 0)
                 return Ok(new { synced = 0 });
 
-            int userId = GetCurrentUserId();
-            if (userId == 0) return Unauthorized();
+            var userId = JwtAuthAttribute.CurrentUserId();
+            if (userId == null) return Unauthorized();
 
             int inserted = 0;
 
@@ -93,7 +93,7 @@ namespace Maryar.Api.Controllers
                         INSERT IGNORE INTO user_favorites (user_id, product_slug, created_at)
                         VALUES (@uid, @slug, NOW())", conn))
                     {
-                        cmd.Parameters.AddWithValue("@uid",  userId);
+                        cmd.Parameters.AddWithValue("@uid",  userId.Value.ToString());
                         cmd.Parameters.AddWithValue("@slug", slug.Trim().ToLower());
                         inserted += cmd.ExecuteNonQuery();
                     }
@@ -106,11 +106,11 @@ namespace Maryar.Api.Controllers
         // ── DELETE /api/favorites/{slug} ────────────────────────────────
         // Remove um favorito individual
         [HttpDelete, Route("{slug}")]
-        [Authorize]
+        [JwtAuthAttribute]
         public IHttpActionResult Remove(string slug)
         {
-            int userId = GetCurrentUserId();
-            if (userId == 0) return Unauthorized();
+            var userId = JwtAuthAttribute.CurrentUserId();
+            if (userId == null) return Unauthorized();
 
             using (var conn = new MySqlConnection(ConnStr))
             {
@@ -119,26 +119,13 @@ namespace Maryar.Api.Controllers
                     "DELETE FROM user_favorites WHERE user_id = @uid AND product_slug = @slug",
                     conn))
                 {
-                    cmd.Parameters.AddWithValue("@uid",  userId);
+                    cmd.Parameters.AddWithValue("@uid",  userId.Value.ToString());
                     cmd.Parameters.AddWithValue("@slug", slug.Trim().ToLower());
                     cmd.ExecuteNonQuery();
                 }
             }
 
             return Ok();
-        }
-
-        // ── Helper: extrai o user_id do token/sessão ────────────────────
-        private int GetCurrentUserId()
-        {
-            var identity = User.Identity as System.Security.Claims.ClaimsIdentity;
-            if (identity == null) return 0;
-
-            var claim = identity.FindFirst("userId")
-                     ?? identity.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)
-                     ?? identity.FindFirst("sub");
-
-            return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
         }
     }
 
