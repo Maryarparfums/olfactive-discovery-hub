@@ -104,8 +104,9 @@ namespace Maryar.Api.Controllers
             return Ok(new { synced = inserted });
         }
 
-        // ── DELETE /api/favorites/{slug} ────────────────────────────────
-        [HttpDelete, Route("{slug}")]
+        // ── POST /api/favorites/{slug}/remove ───────────────────────────
+        // Locaweb bloqueia DELETE no applicationHost.config — usamos POST
+        [HttpPost, Route("{slug}/remove")]
         [JwtAuthAttribute]
         public IHttpActionResult Remove(string slug)
         {
