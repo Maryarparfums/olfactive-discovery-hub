@@ -40,6 +40,33 @@ namespace Maryar.Api.Controllers
             return Ok(new { slugs });
         }
 
+        // ── POST /api/favorites/{slug} ──────────────────────────────────
+        // Adiciona um favorito individual (usuário já logado)
+        [HttpPost, Route("{slug}")]
+        [Authorize]
+        public IHttpActionResult Add(string slug)
+        {
+            int userId = GetCurrentUserId();
+            if (userId == 0) return Unauthorized();
+
+            if (string.IsNullOrWhiteSpace(slug)) return BadRequest();
+
+            using (var conn = new MySqlConnection(ConnStr))
+            {
+                conn.Open();
+                using (var cmd = new MySqlCommand(@"
+                    INSERT IGNORE INTO user_favorites (user_id, product_slug, created_at)
+                    VALUES (@uid, @slug, NOW())", conn))
+                {
+                    cmd.Parameters.AddWithValue("@uid",  userId);
+                    cmd.Parameters.AddWithValue("@slug", slug.Trim().ToLower());
+                    cmd.ExecuteNonQuery();
+                }
+            }
+
+            return Ok();
+        }
+
         // ── POST /api/favorites/sync ────────────────────────────────────
         // Recebe array de slugs do localStorage e faz merge com o banco.
         // Chamado automaticamente quando o cliente faz login.
@@ -62,7 +89,6 @@ namespace Maryar.Api.Controllers
                 {
                     if (string.IsNullOrWhiteSpace(slug)) continue;
 
-                    // INSERT IGNORE evita erro de duplicata (UNIQUE KEY uq_user_product)
                     using (var cmd = new MySqlCommand(@"
                         INSERT IGNORE INTO user_favorites (user_id, product_slug, created_at)
                         VALUES (@uid, @slug, NOW())", conn))
@@ -108,7 +134,6 @@ namespace Maryar.Api.Controllers
             var identity = User.Identity as System.Security.Claims.ClaimsIdentity;
             if (identity == null) return 0;
 
-            // Tenta a claim "userId" primeiro, depois "sub" (padrão JWT)
             var claim = identity.FindFirst("userId")
                      ?? identity.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)
                      ?? identity.FindFirst("sub");
