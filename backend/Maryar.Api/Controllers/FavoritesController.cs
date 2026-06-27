@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
-using MySql.Data.MySqlClient;
 using System.Web.Http;
+using MySql.Data.MySqlClient;
 
-namespace SeuProjeto.Controllers
+namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("api/favorites")]
+    [RoutePrefix("favorites")]
     public class FavoritesController : ApiController
     {
         private static string ConnStr =>
@@ -103,14 +102,17 @@ namespace SeuProjeto.Controllers
             return Ok();
         }
 
-        // ── Helpers ─────────────────────────────────────────────────────
+        // ── Helper: extrai o user_id do token/sessão ────────────────────
         private int GetCurrentUserId()
         {
-            // Adapte conforme seu sistema de autenticação.
-            // Exemplo com Claims (JWT):
             var identity = User.Identity as System.Security.Claims.ClaimsIdentity;
             if (identity == null) return 0;
-            var claim = identity.FindFirst("userId") ?? identity.FindFirst("sub");
+
+            // Tenta a claim "userId" primeiro, depois "sub" (padrão JWT)
+            var claim = identity.FindFirst("userId")
+                     ?? identity.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)
+                     ?? identity.FindFirst("sub");
+
             return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
         }
     }
