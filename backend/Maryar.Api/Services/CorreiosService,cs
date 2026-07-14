@@ -11,25 +11,25 @@ namespace Maryar.Api.Services
 {
     public class ShippingOption
     {
-        public string Code        { get; set; } // "03220" ou "03298"
-        public string Name        { get; set; } // "SEDEX" ou "PAC"
-        public decimal Price      { get; set; }
-        public int DeliveryDays   { get; set; }
-        public string Description { get; set; } // ex: "Entrega em até 3 dias úteis"
+        public string  Code        { get; set; }
+        public string  Name        { get; set; }
+        public decimal Price       { get; set; }
+        public int     DeliveryDays { get; set; }
+        public string  Description { get; set; }
     }
 
     public class CorreiosService
     {
         private static readonly HttpClient _http = new HttpClient();
 
+        private readonly string _token;
         private readonly string _cartao;
-        private readonly string _senha;
         private readonly string _cepOrigem;
 
         private const string TokenUrl = "https://api.correios.com.br/token/v1/autentica/cartaopostagem";
         private const string PrecoUrl = "https://api.correios.com.br/preco/v1/nacional";
 
-        // Dimensões padrão para caixa de perfume (ajuste conforme sua embalagem)
+        // Dimensões padrão para caixa de perfume — ajuste conforme sua embalagem
         private const string PesoKg      = "0.300"; // 300g
         private const string Comprimento = "16";    // cm
         private const string Largura     = "11";    // cm
@@ -40,20 +40,30 @@ namespace Maryar.Api.Services
 
         public CorreiosService()
         {
-            // ← ALTERADO: lê do web.config em vez de variáveis de ambiente
-            _cartao    = ConfigurationManager.AppSettings["Correios.Cartao"]    ?? throw new Exception("Correios.Cartao não configurado no web.config");
-            _senha     = ConfigurationManager.AppSettings["Correios.Senha"]     ?? throw new Exception("Correios.Senha não configurado no web.config");
-            _cepOrigem = ConfigurationManager.AppSettings["Correios.CepOrigem"] ?? throw new Exception("Correios.CepOrigem não configurado no web.config");
+            // Token gerado no portal de desenvolvedores (opcional — usado se não quiser autenticar via cartão)
+            _token     = ConfigurationManager.AppSettings["Correios.Token"];
+            // Cartão de postagem (necessário para renovar token automaticamente)
+            _cartao    = ConfigurationManager.AppSettings["Correios.Cartao"];
+            _cepOrigem = ConfigurationManager.AppSettings["Correios.CepOrigem"]
+                         ?? throw new Exception("Correios.CepOrigem não configurado no web.config");
         }
 
         private async Task<string> GetTokenAsync()
         {
+            // Se tem token fixo no web.config, usa ele diretamente
+            if (!string.IsNullOrEmpty(_token))
+                return _token;
+
+            // Senão, autentica via cartão de postagem
+            if (string.IsNullOrEmpty(_cartao))
+                throw new Exception("Configure Correios.Token ou Correios.Cartao no web.config");
+
             if (!string.IsNullOrEmpty(_cachedToken) && DateTime.UtcNow < _tokenExpira)
                 return _cachedToken;
 
-            var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_cartao}:{_senha}"));
             var req = new HttpRequestMessage(HttpMethod.Post, TokenUrl);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Basic",
+                Convert.ToBase64String(Encoding.UTF8.GetBytes(_cartao)));
             req.Headers.Add("User-Agent", "Maryar/1.0");
 
             var res = await _http.SendAsync(req);
@@ -69,14 +79,11 @@ namespace Maryar.Api.Services
 
         private async Task<ShippingOption> GetPrecoAsync(string token, string codigoServico, string nomeServico, string cepDestino)
         {
-            var cepDestinoClean = cepDestino.Replace("-", "").Trim();
-            var cepOrigemClean  = _cepOrigem.Replace("-", "").Trim();
-
             var body = new
             {
                 idServico          = codigoServico,
-                cepOrigem          = cepOrigemClean,
-                cepDestino         = cepDestinoClean,
+                cepOrigem          = _cepOrigem.Replace("-", "").Trim(),
+                cepDestino         = cepDestino.Replace("-", "").Trim(),
                 psObjeto           = PesoKg,
                 tpObjeto           = "2",
                 comprimento        = Comprimento,
@@ -89,10 +96,7 @@ namespace Maryar.Api.Services
             var req = new HttpRequestMessage(HttpMethod.Post, PrecoUrl);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Headers.Add("User-Agent", "Maryar/1.0");
-            req.Content = new StringContent(
-                JsonConvert.SerializeObject(body),
-                Encoding.UTF8,
-                "application/json");
+            req.Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json");
 
             var res = await _http.SendAsync(req);
             var json = await res.Content.ReadAsStringAsync();
@@ -100,8 +104,8 @@ namespace Maryar.Api.Services
                 throw new Exception($"Correios: erro ao calcular {nomeServico}: " + json);
 
             dynamic data = JsonConvert.DeserializeObject(json);
-
             dynamic item = data[0];
+
             decimal preco = decimal.Parse(((string)item.pcFinal).Replace(",", "."),
                 System.Globalization.CultureInfo.InvariantCulture);
             int prazo = (int)item.prazoEntrega;
@@ -119,27 +123,17 @@ namespace Maryar.Api.Services
         public async Task<List<ShippingOption>> CalcularFreteAsync(string cepDestino)
         {
             var token = await GetTokenAsync();
-            var options = new List<ShippingOption>();
 
             var sedexTask = GetPrecoAsync(token, "03220", "SEDEX", cepDestino);
             var pacTask   = GetPrecoAsync(token, "03298", "PAC",   cepDestino);
-
             await Task.WhenAll(sedexTask, pacTask);
 
             var sedex = sedexTask.Result;
             var pac   = pacTask.Result;
 
-            if (pac.Price <= sedex.Price)
-            {
-                options.Add(pac);
-                options.Add(sedex);
-            }
-            else
-            {
-                options.Add(sedex);
-                options.Add(pac);
-            }
-
+            var options = new List<ShippingOption>();
+            if (pac.Price <= sedex.Price) { options.Add(pac); options.Add(sedex); }
+            else                          { options.Add(sedex); options.Add(pac); }
             return options;
         }
     }
