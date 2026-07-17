@@ -30,24 +30,24 @@ namespace Maryar.Api.Dtos
         public string Ccv         { get; set; }
     }
 
-    // ← NOVO: representa o frete escolhido pelo cliente
     public class ShippingOptionDto
     {
-        public string  Code        { get; set; } // "03220" (SEDEX) ou "03298" (PAC)
-        public string  Name        { get; set; } // "SEDEX" ou "PAC"
-        public decimal Price       { get; set; } // valor em reais
+        public string  Code         { get; set; } // "03220" (SEDEX) ou "03298" (PAC)
+        public string  Name         { get; set; } // "SEDEX" ou "PAC"
+        public decimal Price        { get; set; } // valor em reais
         public int     DeliveryDays { get; set; } // prazo em dias úteis
-        public string  Description { get; set; } // ex: "Entrega em até 3 dias úteis"
+        public string  Description  { get; set; } // ex: "Entrega em até 3 dias úteis"
     }
 
     public class CheckoutRequest
     {
         public CustomerDto        Customer       { get; set; }
         public ShippingAddressDto Shipping       { get; set; }
-        public ShippingOptionDto  ShippingOption { get; set; } // ← NOVO
+        public ShippingOptionDto  ShippingOption { get; set; }
         public string             PaymentMethod  { get; set; } // "pix" | "credit_card"
         public CreditCardDto      CreditCard     { get; set; }
         public int                Installments   { get; set; }
+        public string             CouponSlug     { get; set; } // cupom de desconto (opcional)
     }
 
     public class CheckoutResponse
