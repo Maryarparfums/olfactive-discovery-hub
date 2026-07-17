@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -39,7 +38,7 @@ namespace Maryar.Api.Services
 
     public class PackageInfo
     {
-        public string PesoKg      { get; set; }
+        public string PesoG       { get; set; }
         public string Comprimento { get; set; }
         public string Largura     { get; set; }
         public string Altura      { get; set; }
@@ -50,25 +49,21 @@ namespace Maryar.Api.Services
     {
         private static readonly HttpClient _http = new HttpClient();
 
-        private readonly string _login;
         private readonly string _chaveAcesso;
-        private readonly string _contrato;
+        private readonly int    _dr;
         private readonly string _cepOrigem;
 
-        private const string TokenUrl = "https://api.correios.com.br/token/v1/autentica/contrato";
-        private const string PrecoUrl = "https://api.correios.com.br/preco/v3/nacional";
-
-        private static string   _cachedToken;
-        private static DateTime _tokenExpira = DateTime.MinValue;
+        private const string PrecoUrl = "https://api.correios.com.br/preco/v1/nacional";
+        private const string PrazoUrl = "https://api.correios.com.br/prazo/v1/nacional";
 
         private static readonly string[] OrdemCaixas = { "P", "M", "G", "GG" };
 
         public CorreiosService()
         {
-            _login       = ConfigurationManager.AppSettings["Correios.Login"]       ?? throw new Exception("Correios.Login não configurado no web.config");
             _chaveAcesso = ConfigurationManager.AppSettings["Correios.ChaveAcesso"] ?? throw new Exception("Correios.ChaveAcesso não configurado no web.config");
-            _contrato    = ConfigurationManager.AppSettings["Correios.Contrato"]    ?? throw new Exception("Correios.Contrato não configurado no web.config");
+            var drStr    = ConfigurationManager.AppSettings["Correios.DR"]          ?? throw new Exception("Correios.DR não configurado no web.config");
             _cepOrigem   = ConfigurationManager.AppSettings["Correios.CepOrigem"]   ?? throw new Exception("Correios.CepOrigem não configurado no web.config");
+            _dr = int.Parse(drStr);
         }
 
         public PackageInfo EscolherEmbalagem(List<CartItemInfo> itens, List<BoxSize> todasCaixas)
@@ -96,7 +91,7 @@ namespace Maryar.Api.Services
 
             return new PackageInfo
             {
-                PesoKg      = (pesoTotalG / 1000.0).ToString("F3", System.Globalization.CultureInfo.InvariantCulture),
+                PesoG       = pesoTotalG.ToString(),
                 Comprimento = caixaEscolhida.Comprimento.ToString(),
                 Largura     = caixaEscolhida.Largura.ToString(),
                 Altura      = caixaEscolhida.Altura.ToString(),
@@ -104,60 +99,45 @@ namespace Maryar.Api.Services
             };
         }
 
-        private async Task<string> GetTokenAsync()
-        {
-            if (!string.IsNullOrEmpty(_cachedToken) && DateTime.UtcNow < _tokenExpira)
-                return _cachedToken;
-
-            // Chave de acesso como username, password vazio
-            var credentials = Convert.ToBase64String(
-                Encoding.UTF8.GetBytes($"{_chaveAcesso}:"));
-
-            var body = new { numero = _contrato };
-
-            var req = new HttpRequestMessage(HttpMethod.Post, TokenUrl);
-            req.Headers.TryAddWithoutValidation("Authorization", $"Basic {credentials}");
-            req.Headers.TryAddWithoutValidation("Accept", "application/json");
-            req.Headers.TryAddWithoutValidation("User-Agent", "Maryar/1.0");
-            req.Content = new StringContent(
-                JsonConvert.SerializeObject(body),
-                Encoding.UTF8,
-                "application/json");
-
-            var res  = await _http.SendAsync(req);
-            var json = await res.Content.ReadAsStringAsync();
-
-            if (!res.IsSuccessStatusCode)
-                throw new Exception(
-                    $"Correios auth falhou | HTTP {(int)res.StatusCode} {res.ReasonPhrase} | " +
-                    $"Body={( string.IsNullOrEmpty(json) ? "(vazio)" : json )}");
-
-            dynamic data = JsonConvert.DeserializeObject(json);
-            _cachedToken = (string)data.token;
-            _tokenExpira = DateTime.UtcNow.AddHours(1);
-            return _cachedToken;
-        }
-
-        private async Task<ShippingOption> GetPrecoAsync(
-            string token, string codigoServico, string nomeServico,
+        private async Task<Dictionary<string, decimal>> BuscarPrecosAsync(
             string cepDestino, PackageInfo pkg)
         {
             var body = new
             {
-                idServico          = codigoServico,
-                cepOrigem          = _cepOrigem.Replace("-", "").Trim(),
-                cepDestino         = cepDestino.Replace("-", "").Trim(),
-                psObjeto           = pkg.PesoKg,
-                tpObjeto           = "2",
-                comprimento        = pkg.Comprimento,
-                largura            = pkg.Largura,
-                altura             = pkg.Altura,
-                servicosAdicionais = new string[] { },
-                vlDeclarado        = "0"
+                idLote = "001",
+                parametrosProduto = new[]
+                {
+                    new {
+                        coProduto    = "03220",
+                        nuRequisicao = "0001",
+                        nuDR         = _dr,
+                        cepOrigem    = _cepOrigem.Replace("-", "").Trim(),
+                        cepDestino   = cepDestino.Replace("-", "").Trim(),
+                        psObjeto     = pkg.PesoG,
+                        nuUnidade    = "",
+                        tpObjeto     = "2",
+                        comprimento  = pkg.Comprimento,
+                        largura      = pkg.Largura,
+                        altura       = pkg.Altura
+                    },
+                    new {
+                        coProduto    = "03298",
+                        nuRequisicao = "0002",
+                        nuDR         = _dr,
+                        cepOrigem    = _cepOrigem.Replace("-", "").Trim(),
+                        cepDestino   = cepDestino.Replace("-", "").Trim(),
+                        psObjeto     = pkg.PesoG,
+                        nuUnidade    = "",
+                        tpObjeto     = "2",
+                        comprimento  = pkg.Comprimento,
+                        largura      = pkg.Largura,
+                        altura       = pkg.Altura
+                    }
+                }
             };
 
             var req = new HttpRequestMessage(HttpMethod.Post, PrecoUrl);
-            req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+            req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_chaveAcesso}");
             req.Headers.TryAddWithoutValidation("Accept", "application/json");
             req.Headers.TryAddWithoutValidation("User-Agent", "Maryar/1.0");
             req.Content = new StringContent(
@@ -170,24 +150,88 @@ namespace Maryar.Api.Services
 
             if (!res.IsSuccessStatusCode)
                 throw new Exception(
-                    $"Correios: erro ao calcular {nomeServico} | HTTP {(int)res.StatusCode} {res.ReasonPhrase} | " +
-                    $"Body={( string.IsNullOrEmpty(json) ? "(vazio)" : json )}");
+                    $"Correios preço falhou | HTTP {(int)res.StatusCode} | Body={json}");
 
-            dynamic data  = JsonConvert.DeserializeObject(json);
-            dynamic item  = data[0];
-            decimal preco = decimal.Parse(
-                ((string)item.pcFinal).Replace(",", "."),
-                System.Globalization.CultureInfo.InvariantCulture);
-            int prazo = (int)item.prazoEntrega;
+            dynamic lista = JsonConvert.DeserializeObject(json);
+            var precos = new Dictionary<string, decimal>();
 
-            return new ShippingOption
+            foreach (var item in lista)
             {
-                Code         = codigoServico,
-                Name         = nomeServico,
-                Price        = preco,
-                DeliveryDays = prazo,
-                Description  = $"Entrega em até {prazo} dia{(prazo > 1 ? "s" : "")} útil{(prazo > 1 ? "is" : "")}"
+                string txErro = (string)item.txErro;
+                if (!string.IsNullOrEmpty(txErro)) continue;
+
+                string codigo = (string)item.coProduto;
+                decimal preco = decimal.Parse(
+                    ((string)item.pcFinal).Replace(",", "."),
+                    System.Globalization.CultureInfo.InvariantCulture);
+                precos[codigo] = preco;
+            }
+
+            return precos;
+        }
+
+        private async Task<Dictionary<string, int>> BuscarPrazosAsync(
+            string cepDestino)
+        {
+            var body = new
+            {
+                idLote = "001",
+                parametrosPrazo = new[]
+                {
+                    new {
+                        coProduto    = "03220",
+                        nuRequisicao = "0001",
+                        cepOrigem    = _cepOrigem.Replace("-", "").Trim(),
+                        cepDestino   = cepDestino.Replace("-", "").Trim()
+                    },
+                    new {
+                        coProduto    = "03298",
+                        nuRequisicao = "0002",
+                        cepOrigem    = _cepOrigem.Replace("-", "").Trim(),
+                        cepDestino   = cepDestino.Replace("-", "").Trim()
+                    }
+                }
             };
+
+            var req = new HttpRequestMessage(HttpMethod.Post, PrazoUrl);
+            req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_chaveAcesso}");
+            req.Headers.TryAddWithoutValidation("Accept", "application/json");
+            req.Headers.TryAddWithoutValidation("User-Agent", "Maryar/1.0");
+            req.Content = new StringContent(
+                JsonConvert.SerializeObject(body),
+                Encoding.UTF8,
+                "application/json");
+
+            var res  = await _http.SendAsync(req);
+            var json = await res.Content.ReadAsStringAsync();
+
+            if (!res.IsSuccessStatusCode)
+                return new Dictionary<string, int> { { "03220", 2 }, { "03298", 7 } };
+
+            try
+            {
+                dynamic lista = JsonConvert.DeserializeObject(json);
+                var prazos = new Dictionary<string, int>();
+
+                foreach (var item in lista)
+                {
+                    string txErro = (string)item.txErro;
+                    if (!string.IsNullOrEmpty(txErro)) continue;
+
+                    string codigo = (string)item.coProduto;
+                    int prazo = (int)item.prazoEntrega;
+                    prazos[codigo] = prazo;
+                }
+
+                if (!prazos.ContainsKey("03220")) prazos["03220"] = 2;
+                if (!prazos.ContainsKey("03298")) prazos["03298"] = 7;
+
+                return prazos;
+            }
+            catch
+            {
+                return new Dictionary<string, int> { { "03220", 2 }, { "03298", 7 } };
+            }
         }
 
         public async Task<List<ShippingOption>> CalcularFreteAsync(
@@ -195,19 +239,47 @@ namespace Maryar.Api.Services
             List<CartItemInfo> itens,
             List<BoxSize> todasCaixas)
         {
-            var pkg   = EscolherEmbalagem(itens, todasCaixas);
-            var token = await GetTokenAsync();
+            var pkg = EscolherEmbalagem(itens, todasCaixas);
 
-            var sedexTask = GetPrecoAsync(token, "03220", "SEDEX", cepDestino, pkg);
-            var pacTask   = GetPrecoAsync(token, "03298", "PAC",   cepDestino, pkg);
-            await Task.WhenAll(sedexTask, pacTask);
+            var precosTask = BuscarPrecosAsync(cepDestino, pkg);
+            var prazosTask = BuscarPrazosAsync(cepDestino);
+            await Task.WhenAll(precosTask, prazosTask);
 
-            var sedex = sedexTask.Result;
-            var pac   = pacTask.Result;
+            var precos = precosTask.Result;
+            var prazos = prazosTask.Result;
 
-            return pac.Price <= sedex.Price
-                ? new List<ShippingOption> { pac, sedex }
-                : new List<ShippingOption> { sedex, pac };
+            var opcoes = new List<ShippingOption>();
+
+            if (precos.ContainsKey("03220"))
+            {
+                int prazo = prazos.ContainsKey("03220") ? prazos["03220"] : 2;
+                opcoes.Add(new ShippingOption
+                {
+                    Code         = "03220",
+                    Name         = "SEDEX",
+                    Price        = precos["03220"],
+                    DeliveryDays = prazo,
+                    Description  = $"Entrega em até {prazo} dia{(prazo > 1 ? "s" : "")} útil{(prazo > 1 ? "is" : "")}"
+                });
+            }
+
+            if (precos.ContainsKey("03298"))
+            {
+                int prazo = prazos.ContainsKey("03298") ? prazos["03298"] : 7;
+                opcoes.Add(new ShippingOption
+                {
+                    Code         = "03298",
+                    Name         = "PAC",
+                    Price        = precos["03298"],
+                    DeliveryDays = prazo,
+                    Description  = $"Entrega em até {prazo} dia{(prazo > 1 ? "s" : "")} útil{(prazo > 1 ? "is" : "")}"
+                });
+            }
+
+            if (opcoes.Count == 0)
+                throw new Exception("Nenhuma opção de frete disponível para o CEP informado.");
+
+            return opcoes.OrderBy(o => o.Price).ToList();
         }
     }
 }
