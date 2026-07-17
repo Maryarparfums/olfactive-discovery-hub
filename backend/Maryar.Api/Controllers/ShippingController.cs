@@ -84,15 +84,18 @@ namespace Maryar.Api.Controllers
                 var productId = item.Item1;
                 var qty       = item.Item2;
 
+                // Removido "AND active = 1" — produto no carrinho deve ser cotado sempre
                 var cmd = new MySqlCommand(
-                    "SELECT weight_g, box_size_code FROM products WHERE id = @id AND active = 1 LIMIT 1",
+                    "SELECT weight_g, box_size_code FROM products WHERE id = @id LIMIT 1",
                     conn);
                 cmd.Parameters.AddWithValue("@id", productId);
 
+                bool encontrado = false;
                 using (var reader = (MySqlDataReader) await cmd.ExecuteReaderAsync())
                 {
                     if (await reader.ReadAsync())
                     {
+                        encontrado = true;
                         result.Add(new CartItemInfo
                         {
                             ProductId   = productId,
@@ -101,6 +104,19 @@ namespace Maryar.Api.Controllers
                             BoxSizeCode = Convert.ToString(reader["box_size_code"])
                         });
                     }
+                }
+
+                // Se o produto não foi encontrado no banco, usa valores padrão
+                // para não zerar o carrinho e impedir o cálculo de frete
+                if (!encontrado)
+                {
+                    result.Add(new CartItemInfo
+                    {
+                        ProductId   = productId,
+                        Quantity    = qty,
+                        WeightG     = 300,
+                        BoxSizeCode = "P"
+                    });
                 }
             }
 
