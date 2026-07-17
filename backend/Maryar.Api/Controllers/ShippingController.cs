@@ -14,7 +14,7 @@ namespace Maryar.Api.Controllers
         private string ConnStr =>
             ConfigurationManager.ConnectionStrings["MaryarDb"].ConnectionString;
 
-        // GET /api/shipping/calculate?cep=01310100&items=VARIANT_OR_PRODUCT_ID:2,...
+        // GET /api/shipping/calculate?cep=01310100&items=VARIANT_ID:2,...
         [HttpGet, Route("calculate")]
         public async Task<IHttpActionResult> Calculate(
             [FromUri] string cep,
@@ -81,16 +81,17 @@ namespace Maryar.Api.Controllers
 
             foreach (var item in cartItems)
             {
-                var id  = item.Item1;
-                var qty = item.Item2;
+                var variantId = item.Item1;
+                var qty       = item.Item2;
 
-                // 1) Tenta como product_id direto
+                // Busca via variant_id fazendo JOIN com products para pegar peso e caixa
                 var cmd = new MySqlCommand(@"
                     SELECT p.weight_g, p.box_size_code
-                    FROM products p
-                    WHERE p.id = @id
+                    FROM product_variants v
+                    INNER JOIN products p ON p.id = v.product_id
+                    WHERE v.id = @id
                     LIMIT 1", conn);
-                cmd.Parameters.AddWithValue("@id", id);
+                cmd.Parameters.AddWithValue("@id", variantId);
 
                 int?   weightG     = null;
                 string boxSizeCode = null;
@@ -104,31 +105,10 @@ namespace Maryar.Api.Controllers
                     }
                 }
 
-                // 2) Não achou como produto — tenta como variant_id
-                if (weightG == null)
-                {
-                    var cmd2 = new MySqlCommand(@"
-                        SELECT p.weight_g, p.box_size_code
-                        FROM product_variants v
-                        INNER JOIN products p ON p.id = v.product_id
-                        WHERE v.id = @id
-                        LIMIT 1", conn);
-                    cmd2.Parameters.AddWithValue("@id", id);
-
-                    using (var reader2 = (MySqlDataReader) await cmd2.ExecuteReaderAsync())
-                    {
-                        if (await reader2.ReadAsync())
-                        {
-                            weightG     = Convert.ToInt32(reader2["weight_g"]);
-                            boxSizeCode = Convert.ToString(reader2["box_size_code"]);
-                        }
-                    }
-                }
-
-                // 3) Fallback: ID não existe em nenhuma tabela (carrinho antigo/dado obsoleto)
+                // Fallback para carrinho antigo com ID inválido
                 result.Add(new CartItemInfo
                 {
-                    ProductId   = id,
+                    ProductId   = variantId,
                     Quantity    = qty,
                     WeightG     = weightG     ?? 300,
                     BoxSizeCode = boxSizeCode ?? "P"
