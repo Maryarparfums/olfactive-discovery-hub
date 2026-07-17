@@ -50,14 +50,13 @@ namespace Maryar.Api.Services
     {
         private static readonly HttpClient _http = new HttpClient();
 
-        private readonly string _codigoAcesso;
-        private readonly string _cartao;
+        private readonly string _login;
+        private readonly string _chaveAcesso;
         private readonly string _contrato;
-        private readonly int    _dr;
         private readonly string _cepOrigem;
 
-        private const string TokenUrl = "https://api.correios.com.br/token/v1/autentica/cartaopostagem";
-        private const string PrecoUrl = "https://api.correios.com.br/preco/v1/nacional";
+        private const string TokenUrl = "https://api.correios.com.br/token/v1/autentica/contrato";
+        private const string PrecoUrl = "https://api.correios.com.br/preco/v3/nacional";
 
         private static string   _cachedToken;
         private static DateTime _tokenExpira = DateTime.MinValue;
@@ -66,13 +65,10 @@ namespace Maryar.Api.Services
 
         public CorreiosService()
         {
-            _codigoAcesso = ConfigurationManager.AppSettings["Correios.CodigoAcesso"] ?? throw new Exception("Correios.CodigoAcesso não configurado no web.config");
-            _cartao       = ConfigurationManager.AppSettings["Correios.Cartao"]       ?? throw new Exception("Correios.Cartao não configurado no web.config");
-            _contrato     = ConfigurationManager.AppSettings["Correios.Contrato"]     ?? throw new Exception("Correios.Contrato não configurado no web.config");
-            _cepOrigem    = ConfigurationManager.AppSettings["Correios.CepOrigem"]    ?? throw new Exception("Correios.CepOrigem não configurado no web.config");
-
-            var drStr = ConfigurationManager.AppSettings["Correios.DR"] ?? throw new Exception("Correios.DR não configurado no web.config");
-            _dr = int.Parse(drStr);
+            _login       = ConfigurationManager.AppSettings["Correios.Login"]       ?? throw new Exception("Correios.Login não configurado no web.config");
+            _chaveAcesso = ConfigurationManager.AppSettings["Correios.ChaveAcesso"] ?? throw new Exception("Correios.ChaveAcesso não configurado no web.config");
+            _contrato    = ConfigurationManager.AppSettings["Correios.Contrato"]    ?? throw new Exception("Correios.Contrato não configurado no web.config");
+            _cepOrigem   = ConfigurationManager.AppSettings["Correios.CepOrigem"]   ?? throw new Exception("Correios.CepOrigem não configurado no web.config");
         }
 
         public PackageInfo EscolherEmbalagem(List<CartItemInfo> itens, List<BoxSize> todasCaixas)
@@ -87,13 +83,10 @@ namespace Maryar.Api.Services
                 .OrderByDescending(c => Array.IndexOf(OrdemCaixas, c))
                 .First();
 
-            var caixasOrdenadas = todasCaixas
-                .OrderBy(c => Array.IndexOf(OrdemCaixas, c.Code))
-                .ToList();
-
             int indiceMinimo = Array.IndexOf(OrdemCaixas, codigoMinimoExigido);
 
-            BoxSize caixaEscolhida = caixasOrdenadas
+            BoxSize caixaEscolhida = todasCaixas
+                .OrderBy(c => Array.IndexOf(OrdemCaixas, c.Code))
                 .Where(c => Array.IndexOf(OrdemCaixas, c.Code) >= indiceMinimo
                          && c.MaxWeightG >= pesoTotalG)
                 .FirstOrDefault();
@@ -116,15 +109,11 @@ namespace Maryar.Api.Services
             if (!string.IsNullOrEmpty(_cachedToken) && DateTime.UtcNow < _tokenExpira)
                 return _cachedToken;
 
-            // Basic auth usa só o código de acesso como username, senha vazia
-            var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_codigoAcesso}:"));
+            // Basic auth: CNPJ (login) como username, chave de acesso como password
+            var credentials = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes($"{_login}:{_chaveAcesso}"));
 
-            var body = new
-            {
-                numero   = _cartao,
-                contrato = _contrato,
-                dr       = _dr
-            };
+            var body = new { numero = _contrato };
 
             var req = new HttpRequestMessage(HttpMethod.Post, TokenUrl);
             req.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
@@ -140,7 +129,7 @@ namespace Maryar.Api.Services
             if (!res.IsSuccessStatusCode)
                 throw new Exception(
                     $"Correios auth falhou | HTTP {(int)res.StatusCode} {res.ReasonPhrase} | " +
-                    $"Cartao={_cartao} | Contrato={_contrato} | DR={_dr} | " +
+                    $"Login={_login} | Contrato={_contrato} | " +
                     $"Body={( string.IsNullOrEmpty(json) ? "(vazio)" : json )}");
 
             dynamic data = JsonConvert.DeserializeObject(json);
