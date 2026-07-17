@@ -109,15 +109,16 @@ namespace Maryar.Api.Services
             if (!string.IsNullOrEmpty(_cachedToken) && DateTime.UtcNow < _tokenExpira)
                 return _cachedToken;
 
-            // Basic auth: CNPJ (login) como username, chave de acesso como password
+            // Chave de acesso como username, password vazio
             var credentials = Convert.ToBase64String(
-                Encoding.UTF8.GetBytes($"{_login}:{_chaveAcesso}"));
+                Encoding.UTF8.GetBytes($"{_chaveAcesso}:"));
 
             var body = new { numero = _contrato };
 
             var req = new HttpRequestMessage(HttpMethod.Post, TokenUrl);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
-            req.Headers.Add("User-Agent", "Maryar/1.0");
+            req.Headers.TryAddWithoutValidation("Authorization", $"Basic {credentials}");
+            req.Headers.TryAddWithoutValidation("Accept", "application/json");
+            req.Headers.TryAddWithoutValidation("User-Agent", "Maryar/1.0");
             req.Content = new StringContent(
                 JsonConvert.SerializeObject(body),
                 Encoding.UTF8,
@@ -129,7 +130,6 @@ namespace Maryar.Api.Services
             if (!res.IsSuccessStatusCode)
                 throw new Exception(
                     $"Correios auth falhou | HTTP {(int)res.StatusCode} {res.ReasonPhrase} | " +
-                    $"Login={_login} | Contrato={_contrato} | " +
                     $"Body={( string.IsNullOrEmpty(json) ? "(vazio)" : json )}");
 
             dynamic data = JsonConvert.DeserializeObject(json);
@@ -157,8 +157,9 @@ namespace Maryar.Api.Services
             };
 
             var req = new HttpRequestMessage(HttpMethod.Post, PrecoUrl);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            req.Headers.Add("User-Agent", "Maryar/1.0");
+            req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+            req.Headers.TryAddWithoutValidation("Accept", "application/json");
+            req.Headers.TryAddWithoutValidation("User-Agent", "Maryar/1.0");
             req.Content = new StringContent(
                 JsonConvert.SerializeObject(body),
                 Encoding.UTF8,
