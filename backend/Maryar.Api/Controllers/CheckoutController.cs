@@ -1,335 +1,172 @@
-using System;
-using System.Collections.Generic;
-using System.Configuration;
-using System.Linq;
-using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Web;
-using System.Web.Http;
-using Maryar.Api.Dtos;
-using Maryar.Api.Infrastructure;
-using Maryar.Api.Models;
-using Maryar.Api.Repositories.Interfaces;
-using Maryar.Api.Repositories.MySql;
-using Maryar.Api.Services;
-using MySql.Data.MySqlClient;
-
-namespace Maryar.Api.Controllers
+[HttpPost, Route("")]
+public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
 {
-    [RoutePrefix("checkout")]
-    public class CheckoutController : ApiController
+    TryAuthenticateRequest();
+
+    if (req?.Customer == null || req.Shipping == null)
+        return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
+
+    if (req.ShippingOption == null || req.ShippingOption.Price <= 0)
+        return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opcao de frete antes de continuar." });
+
+    var method = (req.PaymentMethod ?? "pix").ToLower();
+    if (method == "credit_card" && req.CreditCard == null)
+        return Content(HttpStatusCode.BadRequest, new { error = "Dados do cartao ausentes." });
+
+    // ── BLOCO DIAGNÓSTICO: captura erros síncronos com mensagem clara ──
+    Guid orderId;
+    string orderNumber;
+    PricingService.PricingResult pricing;
+    Guid userId;
+    Order order;
+
+    try
     {
-        private const string CookieName = "maryar_cart";
-        private readonly ICartRepository    _carts;
-        private readonly IProductRepository _products;
-        private readonly IOrderRepository   _orders;
-        private readonly AsaasClient        _asaas;
-        private readonly IUserRepository    _users;
+        var cartId = ResolveCartId();
+        if (!cartId.HasValue)
+            return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
 
-        private readonly string _conn =
-            ConfigurationManager.ConnectionStrings["MaryarDb"].ConnectionString;
+        var cartItems = _carts.GetItems(cartId.Value).ToList();
+        if (cartItems.Count == 0)
+            return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
 
-        // Dados completos de um cupom retornados pelo banco
-        private class CouponInfo
+        var productsById = cartItems
+            .Select(ci => _products.GetById(ci.ProductId))
+            .Where(p => p != null)
+            .ToDictionary(p => p.Id, p => p);
+
+        pricing = PricingService.Calculate(cartItems, productsById);
+        if (pricing.Total <= 0)
+            return Content(HttpStatusCode.BadRequest, new { error = "Nao foi possivel calcular o total." });
+
+        var coupon          = LookupCoupon(req.CouponSlug);
+        var salesCommission = 0m;
+
+        if (coupon != null)
         {
-            public string  Slug       { get; set; }
-            public decimal Percent    { get; set; } // desconto % para o cliente
-            public Guid?   DealerId   { get; set; } // user_id do dono do cupom
-            public decimal Commission { get; set; } // comissao % do dealer
+            pricing.Discount    += pricing.Subtotal * (coupon.Percent / 100m);
+            salesCommission      = pricing.Subtotal * (coupon.Commission / 100m);
         }
 
-        public CheckoutController()
-            : this(new CartRepository(), new ProductRepository(),
-                   new OrderRepository(), new AsaasClient(),
-                   new UserRepository()) { }
+        pricing.ShippingFee = req.ShippingOption.Price;
+        pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
 
-        public CheckoutController(ICartRepository carts, IProductRepository products,
-                                  IOrderRepository orders, AsaasClient asaas,
-                                  IUserRepository users)
+        var profileDto = new UserProfileDto
         {
-            _carts    = carts;
-            _products = products;
-            _orders   = orders;
-            _asaas    = asaas;
-            _users    = users;
+            Name        = req.Customer.Name,
+            Email       = req.Customer.Email,
+            Phone       = req.Customer.Phone,
+            Cpf         = req.Customer.Document,
+            Cep         = req.Shipping.Zip,
+            Logradouro  = req.Shipping.Street,
+            Numero      = req.Shipping.Number,
+            Complemento = req.Shipping.Complement,
+            Bairro      = req.Shipping.Neighborhood,
+            Cidade      = req.Shipping.City,
+            Estado      = req.Shipping.State
+        };
+
+        var currentUserId = JwtAuthAttribute.CurrentUserId();
+        if (currentUserId.HasValue)
+        {
+            userId = currentUserId.Value;
+            _users.UpdateProfile(userId, profileDto);
+        }
+        else
+        {
+            userId = _users.UpsertByEmail(profileDto);
         }
 
-        private Guid? ResolveCartId()
+        orderId     = Guid.NewGuid();
+        orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+
+        order = new Order
         {
-            var userId = JwtAuthAttribute.CurrentUserId();
-            string token = null;
-            var ctx = HttpContext.Current;
-            if (ctx != null)
-            {
-                var c = ctx.Request.Cookies[CookieName];
-                token = c?.Value;
-            }
-            if (!userId.HasValue && string.IsNullOrEmpty(token)) return null;
-            return _carts.GetOrCreate(userId, token).Id;
-        }
+            Id                   = orderId,
+            OrderNumber          = orderNumber,
+            UserId               = userId,
+            CustomerName         = req.Customer.Name,
+            CustomerEmail        = req.Customer.Email,
+            CustomerDocument     = req.Customer.Document,
+            CustomerPhone        = req.Customer.Phone,
+            ShippingZip          = req.Shipping.Zip,
+            ShippingStreet       = req.Shipping.Street,
+            ShippingNumber       = req.Shipping.Number,
+            ShippingComplement   = req.Shipping.Complement,
+            ShippingNeighborhood = req.Shipping.Neighborhood,
+            ShippingCity         = req.Shipping.City,
+            ShippingState        = req.Shipping.State,
+            Subtotal             = pricing.Subtotal,
+            ShippingFee          = pricing.ShippingFee,
+            Discount             = pricing.Discount,
+            Total                = pricing.Total,
+            Coupon               = coupon?.Slug,
+            DealerId             = coupon?.DealerId,
+            SalesCommission      = salesCommission,
+            PaymentMethod        = method,
+            PaymentStatus        = "pending",
+            OrderStatus          = "created"
+        };
 
-        private void TryAuthenticateRequest()
+        foreach (var it in pricing.Items) it.OrderId = orderId;
+        _orders.Create(order, pricing.Items);
+    }
+    catch (Exception ex)
+    {
+        // Retorna o erro real para diagnóstico — remova ou restrinja após identificar o problema
+        return Content(HttpStatusCode.InternalServerError, new
         {
-            var auth = Request.Headers.Authorization;
-            if (auth == null || auth.Scheme != "Bearer" || string.IsNullOrWhiteSpace(auth.Parameter))
-                return;
-            try
-            {
-                var principal = new JwtService().ValidateToken(auth.Parameter);
-                Thread.CurrentPrincipal = principal;
-            }
-            catch { /* token invalido - trata como visitante */ }
-        }
+            error = "Erro interno antes do pagamento.",
+            detalhe = ex.GetType().Name + ": " + ex.Message,
+            origem = ex.StackTrace?.Split('\n')[0]?.Trim()
+        });
+    }
+    // ── FIM DO BLOCO DIAGNÓSTICO ──
 
-        // Busca slug, percent, user_id e commission do cupom no banco.
-        // Retorna null se o slug nao existir ou estiver vazio.
-        // Lanca InvalidOperationException com mensagem clara em caso de falha de BD.
-        private CouponInfo LookupCoupon(string slug)
+    try
+    {
+        var customerId = await _asaas.GetOrCreateCustomerAsync(req.Customer);
+
+        if (method == "pix")
         {
-            if (string.IsNullOrWhiteSpace(slug)) return null;
+            var pix = await _asaas.CreatePixAsync(customerId, pricing.Total, orderNumber);
+            _orders.UpdatePaymentInfo(orderId, pix.PaymentId, pix.QrCodeImage, pix.QrCodeText);
 
-            try
+            return Ok(new CheckoutResponse
             {
-                using (var con = new MySqlConnection(_conn))
-                {
-                    con.Open();
-                    using (var cmd = new MySqlCommand(
-                        "SELECT slug, percent, user_id, commission " +
-                        "FROM coupons " +
-                        "WHERE UPPER(slug) = UPPER(@slug) " +
-                        "LIMIT 1", con))
-                    {
-                        cmd.Parameters.AddWithValue("@slug", slug.Trim());
-                        using (var rd = cmd.ExecuteReader())
-                        {
-                            if (!rd.Read()) return null;
-
-                            Guid? dealerId = null;
-                            if (!rd.IsDBNull(rd.GetOrdinal("user_id")))
-                            {
-                                var raw = rd.GetString(rd.GetOrdinal("user_id"));
-                                if (Guid.TryParse(raw, out var g)) dealerId = g;
-                            }
-
-                            return new CouponInfo
-                            {
-                                Slug       = rd.GetString(rd.GetOrdinal("slug")),
-                                Percent    = rd.GetDecimal(rd.GetOrdinal("percent")),
-                                DealerId   = dealerId,
-                                Commission = rd.GetDecimal(rd.GetOrdinal("commission"))
-                            };
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException("Erro ao consultar cupom: " + ex.Message, ex);
-            }
+                OrderId       = orderId,
+                OrderNumber   = orderNumber,
+                PaymentStatus = "pending",
+                PixQrCode     = pix.QrCodeImage,
+                PixCopyPaste  = pix.QrCodeText,
+                Message       = "PIX gerado com sucesso."
+            });
         }
-
-        [HttpPost, Route("")]
-        public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
+        else
         {
-            TryAuthenticateRequest();
+            var installments = req.Installments < 1 ? 1 : req.Installments;
+            var card = await _asaas.CreateCreditCardAsync(
+                customerId, pricing.Total, orderNumber,
+                installments, req.CreditCard, req.Customer, req.Shipping);
 
-            if (req?.Customer == null || req.Shipping == null)
-                return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
+            _orders.UpdatePaymentInfo(orderId, card.PaymentId, null, null);
 
-            if (req.ShippingOption == null || req.ShippingOption.Price <= 0)
-                return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opcao de frete antes de continuar." });
+            var status = card.Status == "CONFIRMED" ? "paid" : "pending";
+            if (status == "paid")
+                _orders.UpdatePaymentStatus(orderId, "paid", "confirmed");
 
-            var method = (req.PaymentMethod ?? "pix").ToLower();
-            if (method == "credit_card" && req.CreditCard == null)
-                return Content(HttpStatusCode.BadRequest, new { error = "Dados do cartao ausentes." });
-
-            var cartId = ResolveCartId();
-            if (!cartId.HasValue)
-                return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
-
-            var cartItems = _carts.GetItems(cartId.Value).ToList();
-            if (cartItems.Count == 0)
-                return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
-
-            var productsById = cartItems
-                .Select(ci => _products.GetById(ci.ProductId))
-                .Where(p => p != null)
-                .ToDictionary(p => p.Id, p => p);
-
-            var pricing = PricingService.Calculate(cartItems, productsById);
-            if (pricing.Total <= 0)
-                return Content(HttpStatusCode.BadRequest, new { error = "Nao foi possivel calcular o total." });
-
-            // Aplica cupom: desconto para o cliente + comissao do dealer
-            var coupon          = LookupCoupon(req.CouponSlug);
-            var salesCommission = 0m;
-
-            if (coupon != null)
+            return Ok(new CheckoutResponse
             {
-                // Desconto concedido ao cliente
-                pricing.Discount += pricing.Subtotal * (coupon.Percent / 100m);
-
-                // Comissao calculada sobre o subtotal (antes do desconto)
-                salesCommission = pricing.Subtotal * (coupon.Commission / 100m);
-            }
-
-            pricing.ShippingFee = req.ShippingOption.Price;
-            pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
-
-            var profileDto = new UserProfileDto
-            {
-                Name        = req.Customer.Name,
-                Email       = req.Customer.Email,
-                Phone       = req.Customer.Phone,
-                Cpf         = req.Customer.Document,
-                Cep         = req.Shipping.Zip,
-                Logradouro  = req.Shipping.Street,
-                Numero      = req.Shipping.Number,
-                Complemento = req.Shipping.Complement,
-                Bairro      = req.Shipping.Neighborhood,
-                Cidade      = req.Shipping.City,
-                Estado      = req.Shipping.State
-            };
-
-            var currentUserId = JwtAuthAttribute.CurrentUserId();
-            Guid userId;
-            if (currentUserId.HasValue)
-            {
-                userId = currentUserId.Value;
-                _users.UpdateProfile(userId, profileDto);
-            }
-            else
-            {
-                userId = _users.UpsertByEmail(profileDto);
-            }
-
-            var orderId     = Guid.NewGuid();
-            var orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-
-            var order = new Order
-            {
-                Id                   = orderId,
-                OrderNumber          = orderNumber,
-                UserId               = userId,
-                CustomerName         = req.Customer.Name,
-                CustomerEmail        = req.Customer.Email,
-                CustomerDocument     = req.Customer.Document,
-                CustomerPhone        = req.Customer.Phone,
-                ShippingZip          = req.Shipping.Zip,
-                ShippingStreet       = req.Shipping.Street,
-                ShippingNumber       = req.Shipping.Number,
-                ShippingComplement   = req.Shipping.Complement,
-                ShippingNeighborhood = req.Shipping.Neighborhood,
-                ShippingCity         = req.Shipping.City,
-                ShippingState        = req.Shipping.State,
-                Subtotal             = pricing.Subtotal,
-                ShippingFee          = pricing.ShippingFee,
-                Discount             = pricing.Discount,
-                Total                = pricing.Total,
-                Coupon               = coupon != null ? coupon.Slug : null,
-                DealerId             = coupon != null ? coupon.DealerId : (Guid?)null,
-                SalesCommission      = salesCommission,
-                PaymentMethod        = method,
-                PaymentStatus        = "pending",
-                OrderStatus          = "created"
-            };
-
-            foreach (var it in pricing.Items) it.OrderId = orderId;
-            _orders.Create(order, pricing.Items);
-
-            try
-            {
-                var customerId = await _asaas.GetOrCreateCustomerAsync(req.Customer);
-
-                if (method == "pix")
-                {
-                    var pix = await _asaas.CreatePixAsync(customerId, pricing.Total, orderNumber);
-                    _orders.UpdatePaymentInfo(orderId, pix.PaymentId, pix.QrCodeImage, pix.QrCodeText);
-
-                    return Ok(new CheckoutResponse
-                    {
-                        OrderId       = orderId,
-                        OrderNumber   = orderNumber,
-                        PaymentStatus = "pending",
-                        PixQrCode     = pix.QrCodeImage,
-                        PixCopyPaste  = pix.QrCodeText,
-                        Message       = "PIX gerado com sucesso."
-                    });
-                }
-                else
-                {
-                    var installments = req.Installments < 1 ? 1 : req.Installments;
-                    var card = await _asaas.CreateCreditCardAsync(
-                        customerId, pricing.Total, orderNumber,
-                        installments, req.CreditCard, req.Customer, req.Shipping);
-
-                    _orders.UpdatePaymentInfo(orderId, card.PaymentId, null, null);
-
-                    var status = card.Status == "CONFIRMED" ? "paid" : "pending";
-                    if (status == "paid")
-                        _orders.UpdatePaymentStatus(orderId, "paid", "confirmed");
-
-                    return Ok(new CheckoutResponse
-                    {
-                        OrderId       = orderId,
-                        OrderNumber   = orderNumber,
-                        PaymentStatus = status,
-                        Message       = status == "paid" ? "Pagamento aprovado!" : "Pagamento em analise."
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                _orders.UpdatePaymentStatus(orderId, "failed", "canceled");
-                return Content(HttpStatusCode.BadGateway, new { error = "Falha no pagamento: " + ex.Message });
-            }
+                OrderId       = orderId,
+                OrderNumber   = orderNumber,
+                PaymentStatus = status,
+                Message       = status == "paid" ? "Pagamento aprovado!" : "Pagamento em analise."
+            });
         }
-
-        [HttpPost, Route("webhook")]
-        public IHttpActionResult Webhook([FromBody] AsaasWebhookPayload payload)
-        {
-            if (payload?.Payment == null) return BadRequest();
-            try
-            {
-                if (payload.Event == "PAYMENT_RECEIVED" || payload.Event == "PAYMENT_CONFIRMED")
-                {
-                    var order = _orders.GetByOrderNumber(payload.Payment.ExternalReference);
-                    if (order != null)
-                        _orders.UpdatePaymentStatus(order.Id, "paid", "confirmed");
-                }
-                return Ok();
-            }
-            catch { return BadRequest(); }
-        }
-
-        [HttpGet, Route("orders")]
-        public IHttpActionResult GetMyOrders()
-        {
-            TryAuthenticateRequest();
-
-            var userId = JwtAuthAttribute.CurrentUserId();
-            string token = null;
-            var ctx = HttpContext.Current;
-            if (ctx != null)
-            {
-                var c = ctx.Request.Cookies[CookieName];
-                token = c?.Value;
-            }
-            if (!userId.HasValue && string.IsNullOrEmpty(token))
-                return Ok(new List<object>());
-
-            return Ok(_orders.GetByUserOrToken(userId, token));
-        }
-
-        [HttpGet, Route("orders/{id:guid}")]
-        public IHttpActionResult GetOrder(Guid id)
-        {
-            TryAuthenticateRequest();
-
-            var o = _orders.GetById(id);
-            if (o == null) return NotFound();
-            return Ok(new { order = o, items = _orders.GetItems(id) });
-        }
+    }
+    catch (Exception ex)
+    {
+        _orders.UpdatePaymentStatus(orderId, "failed", "canceled");
+        return Content(HttpStatusCode.BadGateway, new { error = "Falha no pagamento: " + ex.Message });
     }
 }
