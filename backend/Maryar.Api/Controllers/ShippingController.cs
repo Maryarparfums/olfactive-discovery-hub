@@ -14,13 +14,13 @@ namespace Maryar.Api.Controllers
         private string ConnStr =>
             ConfigurationManager.ConnectionStrings["MaryarDb"].ConnectionString;
 
-        // GET /api/shipping/calculate?cep=01310100&items=PROD_ID1:2,PROD_ID2:1
+        // GET /api/shipping/calculate?cep=01310100&items=VARIANT_OR_PRODUCT_ID:2,...
         [HttpGet, Route("calculate")]
         public async Task<IHttpActionResult> Calculate(
             [FromUri] string cep,
             [FromUri] string items = null)
         {
-            if (string.IsNullOrWhiteSpace(cep) || cep.Replace("-","").Trim().Length != 8)
+            if (string.IsNullOrWhiteSpace(cep) || cep.Replace("-", "").Trim().Length != 8)
                 return BadRequest("CEP inválido.");
 
             try
@@ -81,43 +81,58 @@ namespace Maryar.Api.Controllers
 
             foreach (var item in cartItems)
             {
-                var productId = item.Item1;
-                var qty       = item.Item2;
+                var id  = item.Item1;
+                var qty = item.Item2;
 
-                // Removido "AND active = 1" — produto no carrinho deve ser cotado sempre
-                var cmd = new MySqlCommand(
-                    "SELECT weight_g, box_size_code FROM products WHERE id = @id LIMIT 1",
-                    conn);
-                cmd.Parameters.AddWithValue("@id", productId);
+                // 1) Tenta como product_id direto
+                var cmd = new MySqlCommand(@"
+                    SELECT p.weight_g, p.box_size_code
+                    FROM products p
+                    WHERE p.id = @id
+                    LIMIT 1", conn);
+                cmd.Parameters.AddWithValue("@id", id);
 
-                bool encontrado = false;
+                int?   weightG     = null;
+                string boxSizeCode = null;
+
                 using (var reader = (MySqlDataReader) await cmd.ExecuteReaderAsync())
                 {
                     if (await reader.ReadAsync())
                     {
-                        encontrado = true;
-                        result.Add(new CartItemInfo
-                        {
-                            ProductId   = productId,
-                            Quantity    = qty,
-                            WeightG     = Convert.ToInt32(reader["weight_g"]),
-                            BoxSizeCode = Convert.ToString(reader["box_size_code"])
-                        });
+                        weightG     = Convert.ToInt32(reader["weight_g"]);
+                        boxSizeCode = Convert.ToString(reader["box_size_code"]);
                     }
                 }
 
-                // Se o produto não foi encontrado no banco, usa valores padrão
-                // para não zerar o carrinho e impedir o cálculo de frete
-                if (!encontrado)
+                // 2) Não achou como produto — tenta como variant_id
+                if (weightG == null)
                 {
-                    result.Add(new CartItemInfo
+                    var cmd2 = new MySqlCommand(@"
+                        SELECT p.weight_g, p.box_size_code
+                        FROM product_variants v
+                        INNER JOIN products p ON p.id = v.product_id
+                        WHERE v.id = @id
+                        LIMIT 1", conn);
+                    cmd2.Parameters.AddWithValue("@id", id);
+
+                    using (var reader2 = (MySqlDataReader) await cmd2.ExecuteReaderAsync())
                     {
-                        ProductId   = productId,
-                        Quantity    = qty,
-                        WeightG     = 300,
-                        BoxSizeCode = "P"
-                    });
+                        if (await reader2.ReadAsync())
+                        {
+                            weightG     = Convert.ToInt32(reader2["weight_g"]);
+                            boxSizeCode = Convert.ToString(reader2["box_size_code"]);
+                        }
+                    }
                 }
+
+                // 3) Fallback: ID não existe em nenhuma tabela (carrinho antigo/dado obsoleto)
+                result.Add(new CartItemInfo
+                {
+                    ProductId   = id,
+                    Quantity    = qty,
+                    WeightG     = weightG     ?? 300,
+                    BoxSizeCode = boxSizeCode ?? "P"
+                });
             }
 
             return result;
