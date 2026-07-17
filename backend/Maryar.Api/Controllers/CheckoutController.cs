@@ -30,6 +30,15 @@ namespace Maryar.Api.Controllers
         private readonly string _conn =
             ConfigurationManager.ConnectionStrings["MaryarDb"].ConnectionString;
 
+        // Dados completos de um cupom retornados pelo banco
+        private class CouponInfo
+        {
+            public string  Slug       { get; set; }
+            public decimal Percent    { get; set; } // desconto % para o cliente
+            public Guid?   DealerId   { get; set; } // user_id do dono do cupom
+            public decimal Commission { get; set; } // comissão % do dealer
+        }
+
         public CheckoutController()
             : this(new CartRepository(), new ProductRepository(),
                    new OrderRepository(), new AsaasClient(),
@@ -70,9 +79,9 @@ namespace Maryar.Api.Controllers
             catch { /* token inválido — trata como visitante */ }
         }
 
-        // Busca o percentual de desconto do cupom no banco.
+        // Busca slug, percent, user_id e commission do cupom no banco.
         // Retorna null se o slug não existir ou estiver vazio.
-        private decimal? LookupCouponPercent(string slug)
+        private CouponInfo LookupCoupon(string slug)
         {
             if (string.IsNullOrWhiteSpace(slug)) return null;
 
@@ -80,13 +89,27 @@ namespace Maryar.Api.Controllers
             {
                 con.Open();
                 using (var cmd = new MySqlCommand(
-                    "SELECT percent FROM coupons WHERE UPPER(slug) = UPPER(@slug) LIMIT 1", con))
+                    @"SELECT slug, percent, user_id, commission
+                        FROM coupons
+                       WHERE UPPER(slug) = UPPER(@slug)
+                       LIMIT 1", con))
                 {
                     cmd.Parameters.AddWithValue("@slug", slug.Trim());
                     using (var rd = cmd.ExecuteReader())
                     {
                         if (!rd.Read()) return null;
-                        return rd.GetDecimal("percent");
+
+                        Guid? dealerId = null;
+                        if (!rd.IsDBNull(rd.GetOrdinal("user_id")))
+                            dealerId = rd.GetGuid("user_id");
+
+                        return new CouponInfo
+                        {
+                            Slug       = rd.GetString("slug"),
+                            Percent    = rd.GetDecimal("percent"),
+                            DealerId   = dealerId,
+                            Commission = rd.GetDecimal("commission")
+                        };
                     }
                 }
             }
@@ -124,11 +147,20 @@ namespace Maryar.Api.Controllers
             if (pricing.Total <= 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Não foi possível calcular o total." });
 
-            // ── Aplica desconto do cupom, se informado ──────────────────────────
-            var couponPercent = LookupCouponPercent(req.CouponSlug);
-            if (couponPercent.HasValue)
-                pricing.Discount += pricing.Subtotal * (couponPercent.Value / 100m);
-            // ────────────────────────────────────────────────────────────────────
+            // ── Aplica cupom: desconto + comissão do dealer ──────────────────
+            var coupon         = LookupCoupon(req.CouponSlug);
+            var salesCommission = 0m;
+
+            if (coupon != null)
+            {
+                // Desconto concedido ao cliente
+                pricing.Discount += pricing.Subtotal * (coupon.Percent / 100m);
+
+                // Comissão calculada sobre o subtotal dos produtos (antes do desconto),
+                // pois o dealer recebe pelo volume de vendas que trouxe.
+                salesCommission = pricing.Subtotal * (coupon.Commission / 100m);
+            }
+            // ────────────────────────────────────────────────────────────────
 
             pricing.ShippingFee = req.ShippingOption.Price;
             pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
@@ -183,6 +215,9 @@ namespace Maryar.Api.Controllers
                 ShippingFee          = pricing.ShippingFee,
                 Discount             = pricing.Discount,
                 Total                = pricing.Total,
+                Coupon               = coupon?.Slug,
+                DealerId             = coupon?.DealerId,
+                SalesCommission      = salesCommission,
                 PaymentMethod        = method,
                 PaymentStatus        = "pending",
                 OrderStatus          = "created"
