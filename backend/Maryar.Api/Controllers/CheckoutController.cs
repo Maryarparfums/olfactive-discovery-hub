@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
 using System.Net;
 using System.Threading;
@@ -12,6 +13,7 @@ using Maryar.Api.Models;
 using Maryar.Api.Repositories.Interfaces;
 using Maryar.Api.Repositories.MySql;
 using Maryar.Api.Services;
+using MySql.Data.MySqlClient;
 
 namespace Maryar.Api.Controllers
 {
@@ -24,6 +26,9 @@ namespace Maryar.Api.Controllers
         private readonly IOrderRepository   _orders;
         private readonly AsaasClient        _asaas;
         private readonly IUserRepository    _users;
+
+        private readonly string _conn =
+            ConfigurationManager.ConnectionStrings["MaryarDb"].ConnectionString;
 
         public CheckoutController()
             : this(new CartRepository(), new ProductRepository(),
@@ -65,10 +70,32 @@ namespace Maryar.Api.Controllers
             catch { /* token inválido — trata como visitante */ }
         }
 
+        // Busca o percentual de desconto do cupom no banco.
+        // Retorna null se o slug não existir ou estiver vazio.
+        private decimal? LookupCouponPercent(string slug)
+        {
+            if (string.IsNullOrWhiteSpace(slug)) return null;
+
+            using (var con = new MySqlConnection(_conn))
+            {
+                con.Open();
+                using (var cmd = new MySqlCommand(
+                    "SELECT percent FROM coupons WHERE UPPER(slug) = UPPER(@slug) LIMIT 1", con))
+                {
+                    cmd.Parameters.AddWithValue("@slug", slug.Trim());
+                    using (var rd = cmd.ExecuteReader())
+                    {
+                        if (!rd.Read()) return null;
+                        return rd.GetDecimal("percent");
+                    }
+                }
+            }
+        }
+
         [HttpPost, Route("")]
         public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
         {
-            TryAuthenticateRequest(); // ← CORREÇÃO: autentica o JWT antes de qualquer verificação
+            TryAuthenticateRequest();
 
             if (req?.Customer == null || req.Shipping == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
@@ -97,6 +124,12 @@ namespace Maryar.Api.Controllers
             if (pricing.Total <= 0)
                 return Content(HttpStatusCode.BadRequest, new { error = "Não foi possível calcular o total." });
 
+            // ── Aplica desconto do cupom, se informado ──────────────────────────
+            var couponPercent = LookupCouponPercent(req.CouponSlug);
+            if (couponPercent.HasValue)
+                pricing.Discount += pricing.Subtotal * (couponPercent.Value / 100m);
+            // ────────────────────────────────────────────────────────────────────
+
             pricing.ShippingFee = req.ShippingOption.Price;
             pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
 
@@ -119,14 +152,11 @@ namespace Maryar.Api.Controllers
             Guid userId;
             if (currentUserId.HasValue)
             {
-                // Usuário logado: atualiza perfil pelo ID (sem alterar o e-mail — troca de e-mail
-                // passa pelo fluxo requestemailchange/verifyemail)
                 userId = currentUserId.Value;
                 _users.UpdateProfile(userId, profileDto);
             }
             else
             {
-                // Visitante: busca pelo e-mail; atualiza se existir, cria se não existir
                 userId = _users.UpsertByEmail(profileDto);
             }
 
