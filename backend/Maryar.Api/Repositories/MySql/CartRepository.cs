@@ -13,21 +13,24 @@ namespace Maryar.Api.Repositories.MySql
         public CartRepository() : this(new MySqlConnectionFactory()) { }
 
         // ── GetOrCreate ──────────────────────────────────────────────────────
-        // Lógica corrigida para evitar violação de ux_carts_anon:
         //
-        //  1. userId fornecido → busca carrinho pelo userId
-        //     1a. Encontrou → retorna
-        //     1b. Não encontrou + tem token → busca pelo token e "apropria" (UPDATE user_id, limpa token)
-        //     1c. Nada encontrado → cria carrinho novo só com userId
-        //  2. Só token → busca pelo token; se não existir, cria com token
+        // Casos tratados quando userId está presente:
+        //   A) Só carrinho de usuário existe          → retorna ele
+        //   B) Só carrinho de visitante existe        → apropria (UPDATE user_id)
+        //   C) Ambos existem                          → migra itens do visitante
+        //                                               para o carrinho do usuário,
+        //                                               apaga o carrinho visitante
+        //   D) Nenhum existe                          → cria carrinho para o usuário
+        //
+        // Quando só token (visitante): busca ou cria pelo token.
         public Cart GetOrCreate(Guid? userId, string anonymousToken)
         {
             using (var cn = _factory.Create())
             {
-                // ── Caminho 1: usuário logado ────────────────────────────────
+                // ── Usuário logado ───────────────────────────────────────────
                 if (userId.HasValue)
                 {
-                    // 1a. Já tem carrinho pelo userId?
+                    // Busca carrinho do usuário
                     Cart userCart = null;
                     using (var cmd = cn.CreateCommand())
                     {
@@ -38,12 +41,11 @@ namespace Maryar.Api.Repositories.MySql
                         using (var r = cmd.ExecuteReader())
                             if (r.Read()) userCart = ReadCart(r);
                     }
-                    if (userCart != null) return userCart;
 
-                    // 1b. Tem token de visitante? Apropria o carrinho existente
+                    // Busca carrinho de visitante (se houver token)
+                    Cart guestCart = null;
                     if (!string.IsNullOrEmpty(anonymousToken))
                     {
-                        Cart guestCart = null;
                         using (var cmd = cn.CreateCommand())
                         {
                             cmd.CommandText =
@@ -53,26 +55,49 @@ namespace Maryar.Api.Repositories.MySql
                             using (var r = cmd.ExecuteReader())
                                 if (r.Read()) guestCart = ReadCart(r);
                         }
-
-                        if (guestCart != null)
-                        {
-                            // Transforma o carrinho de visitante no carrinho do usuário
-                            using (var cmd = cn.CreateCommand())
-                            {
-                                cmd.CommandText =
-                                    "UPDATE carts SET user_id = @uid, anonymous_token = NULL " +
-                                    "WHERE id = @id";
-                                cmd.Parameters.AddWithValue("@uid", userId.Value.ToString());
-                                cmd.Parameters.AddWithValue("@id",  guestCart.Id.ToString());
-                                cmd.ExecuteNonQuery();
-                            }
-                            guestCart.UserId         = userId;
-                            guestCart.AnonymousToken = null;
-                            return guestCart;
-                        }
                     }
 
-                    // 1c. Nenhum carrinho encontrado — cria novo para o usuário
+                    // Caso C: ambos existem → migra itens e apaga carrinho visitante
+                    if (userCart != null && guestCart != null)
+                    {
+                        using (var cmd = cn.CreateCommand())
+                        {
+                            cmd.CommandText =
+                                "UPDATE cart_items SET cart_id = @ucid WHERE cart_id = @gcid";
+                            cmd.Parameters.AddWithValue("@ucid", userCart.Id.ToString());
+                            cmd.Parameters.AddWithValue("@gcid", guestCart.Id.ToString());
+                            cmd.ExecuteNonQuery();
+                        }
+                        using (var cmd = cn.CreateCommand())
+                        {
+                            cmd.CommandText = "DELETE FROM carts WHERE id = @id";
+                            cmd.Parameters.AddWithValue("@id", guestCart.Id.ToString());
+                            cmd.ExecuteNonQuery();
+                        }
+                        return userCart;
+                    }
+
+                    // Caso A: só carrinho do usuário
+                    if (userCart != null) return userCart;
+
+                    // Caso B: só carrinho de visitante → apropria para o usuário
+                    if (guestCart != null)
+                    {
+                        using (var cmd = cn.CreateCommand())
+                        {
+                            cmd.CommandText =
+                                "UPDATE carts SET user_id = @uid, anonymous_token = NULL " +
+                                "WHERE id = @id";
+                            cmd.Parameters.AddWithValue("@uid", userId.Value.ToString());
+                            cmd.Parameters.AddWithValue("@id",  guestCart.Id.ToString());
+                            cmd.ExecuteNonQuery();
+                        }
+                        guestCart.UserId         = userId;
+                        guestCart.AnonymousToken = null;
+                        return guestCart;
+                    }
+
+                    // Caso D: nenhum carrinho existe → cria para o usuário
                     var newId = Guid.NewGuid();
                     using (var cmd = cn.CreateCommand())
                     {
@@ -92,7 +117,7 @@ namespace Maryar.Api.Repositories.MySql
                     };
                 }
 
-                // ── Caminho 2: visitante (sem userId) ────────────────────────
+                // ── Visitante (sem userId) ───────────────────────────────────
                 using (var cmd = cn.CreateCommand())
                 {
                     cmd.CommandText =
@@ -309,8 +334,12 @@ namespace Maryar.Api.Repositories.MySql
             return new Cart
             {
                 Id             = Guid.Parse(r["id"].ToString()),
-                UserId         = r["user_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["user_id"].ToString()),
-                AnonymousToken = r["anonymous_token"] == DBNull.Value ? null : r["anonymous_token"].ToString(),
+                UserId         = r["user_id"] == DBNull.Value
+                                     ? (Guid?)null
+                                     : Guid.Parse(r["user_id"].ToString()),
+                AnonymousToken = r["anonymous_token"] == DBNull.Value
+                                     ? null
+                                     : r["anonymous_token"].ToString(),
                 CreatedAt      = Convert.ToDateTime(r["created_at"]),
                 UpdatedAt      = Convert.ToDateTime(r["updated_at"])
             };
