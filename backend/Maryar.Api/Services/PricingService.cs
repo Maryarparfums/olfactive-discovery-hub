@@ -13,10 +13,8 @@ namespace Maryar.Api.Services
         public List<OrderItem> Items { get; set; }
     }
 
-    // Recalcula totais NO SERVIDOR. Nunca confie em valores enviados pelo cliente.
     public static class PricingService
     {
-        // Política simples: frete fixo R$ 25, grátis acima de R$ 350.
         public const decimal ShippingFlat          = 25m;
         public const decimal FreeShippingThreshold = 350m;
 
@@ -32,10 +30,6 @@ namespace Maryar.Api.Services
                 if (!productsById.ContainsKey(ci.ProductId)) continue;
                 var p = productsById[ci.ProductId];
 
-                // Preço autoritativo: usa o UnitPrice gravado no CartItem (reflete a variante
-                // escolhida pelo cliente, ex: decant 5 ml vs frasco 100 ml).
-                // Fallback para p.Price apenas se o item for antigo e UnitPrice não tiver sido
-                // preenchido ainda.
                 var unit = ci.UnitPrice > 0 ? ci.UnitPrice : p.Price;
                 var line = unit * ci.Quantity;
                 subtotal += line;
