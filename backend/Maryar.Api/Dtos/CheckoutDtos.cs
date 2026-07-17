@@ -32,11 +32,11 @@ namespace Maryar.Api.Dtos
 
     public class ShippingOptionDto
     {
-        public string  Code         { get; set; } // "03220" (SEDEX) ou "03298" (PAC)
-        public string  Name         { get; set; } // "SEDEX" ou "PAC"
-        public decimal Price        { get; set; } // valor em reais
-        public int     DeliveryDays { get; set; } // prazo em dias úteis
-        public string  Description  { get; set; } // ex: "Entrega em até 3 dias úteis"
+        public string  Code         { get; set; }
+        public string  Name         { get; set; }
+        public decimal Price        { get; set; }
+        public int     DeliveryDays { get; set; }
+        public string  Description  { get; set; }
     }
 
     public class CheckoutRequest
@@ -44,10 +44,10 @@ namespace Maryar.Api.Dtos
         public CustomerDto        Customer       { get; set; }
         public ShippingAddressDto Shipping       { get; set; }
         public ShippingOptionDto  ShippingOption { get; set; }
-        public string             PaymentMethod  { get; set; } // "pix" | "credit_card"
+        public string             PaymentMethod  { get; set; }
         public CreditCardDto      CreditCard     { get; set; }
         public int                Installments   { get; set; }
-        public string             CouponSlug     { get; set; } // cupom de desconto (opcional)
+        public string             CouponSlug     { get; set; }
     }
 
     public class CheckoutResponse
@@ -55,7 +55,7 @@ namespace Maryar.Api.Dtos
         public Guid   OrderId       { get; set; }
         public string OrderNumber   { get; set; }
         public string PaymentStatus { get; set; }
-        public string PixQrCode     { get; set; } // base64 PNG
+        public string PixQrCode     { get; set; }
         public string PixCopyPaste  { get; set; }
         public string Message       { get; set; }
     }
