@@ -145,6 +145,7 @@
     <Compile Include="Services\PricingService.cs" />
     <Compile Include="Services\AsaasClient.cs" />
     <Compile Include="Services\EmailService.cs" />
+    <Compile Include="Services\CorreiosService.cs" />
     <Compile Include="Controllers\ProductsController.cs" />
     <Compile Include="Controllers\BrandsController.cs" />
     <Compile Include="Controllers\FamiliesController.cs" />
@@ -158,6 +159,7 @@
     <Compile Include="Controllers\OcasioesController.cs" />
     <Compile Include="Controllers\FavoritesController.cs" />
     <Compile Include="Controllers\SocialNetworksController.cs" />
+    <Compile Include="Controllers\ShippingController.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
