@@ -37,12 +37,23 @@ namespace Maryar.Api.Services
         public int    SortOrder   { get; set; }
     }
 
+    public class PackageInfo
+    {
+        public string PesoKg      { get; set; }
+        public string Comprimento { get; set; }
+        public string Largura     { get; set; }
+        public string Altura      { get; set; }
+        public string CaixaCodigo { get; set; }
+    }
+
     public class CorreiosService
     {
         private static readonly HttpClient _http = new HttpClient();
 
+        private readonly string _codigoAcesso;
         private readonly string _cartao;
-        private readonly string _senha;
+        private readonly string _contrato;
+        private readonly int    _dr;
         private readonly string _cepOrigem;
 
         private const string TokenUrl = "https://api.correios.com.br/token/v1/autentica/cartaopostagem";
@@ -55,9 +66,13 @@ namespace Maryar.Api.Services
 
         public CorreiosService()
         {
-            _cartao    = ConfigurationManager.AppSettings["Correios.Cartao"]    ?? throw new Exception("Correios.Cartao não configurado no web.config");
-            _senha     = ConfigurationManager.AppSettings["Correios.Senha"]     ?? throw new Exception("Correios.Senha não configurado no web.config");
-            _cepOrigem = ConfigurationManager.AppSettings["Correios.CepOrigem"] ?? throw new Exception("Correios.CepOrigem não configurado no web.config");
+            _codigoAcesso = ConfigurationManager.AppSettings["Correios.CodigoAcesso"] ?? throw new Exception("Correios.CodigoAcesso não configurado no web.config");
+            _cartao       = ConfigurationManager.AppSettings["Correios.Cartao"]       ?? throw new Exception("Correios.Cartao não configurado no web.config");
+            _contrato     = ConfigurationManager.AppSettings["Correios.Contrato"]     ?? throw new Exception("Correios.Contrato não configurado no web.config");
+            _cepOrigem    = ConfigurationManager.AppSettings["Correios.CepOrigem"]    ?? throw new Exception("Correios.CepOrigem não configurado no web.config");
+
+            var drStr = ConfigurationManager.AppSettings["Correios.DR"] ?? throw new Exception("Correios.DR não configurado no web.config");
+            _dr = int.Parse(drStr);
         }
 
         public PackageInfo EscolherEmbalagem(List<CartItemInfo> itens, List<BoxSize> todasCaixas)
@@ -84,7 +99,7 @@ namespace Maryar.Api.Services
                 .FirstOrDefault();
 
             if (caixaEscolhida == null)
-                throw new Exception($"Nenhuma caixa disponível para {pesoTotalG}g. Verifique o cadastro de embalagens.");
+                throw new Exception($"Nenhuma caixa disponível para {pesoTotalG}g.");
 
             return new PackageInfo
             {
@@ -101,10 +116,23 @@ namespace Maryar.Api.Services
             if (!string.IsNullOrEmpty(_cachedToken) && DateTime.UtcNow < _tokenExpira)
                 return _cachedToken;
 
-            var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_cartao}:{_senha}"));
+            // Basic auth usa só o código de acesso como username, senha vazia
+            var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_codigoAcesso}:"));
+
+            var body = new
+            {
+                numero   = _cartao,
+                contrato = _contrato,
+                dr       = _dr
+            };
+
             var req = new HttpRequestMessage(HttpMethod.Post, TokenUrl);
             req.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
             req.Headers.Add("User-Agent", "Maryar/1.0");
+            req.Content = new StringContent(
+                JsonConvert.SerializeObject(body),
+                Encoding.UTF8,
+                "application/json");
 
             var res  = await _http.SendAsync(req);
             var json = await res.Content.ReadAsStringAsync();
@@ -112,7 +140,8 @@ namespace Maryar.Api.Services
             if (!res.IsSuccessStatusCode)
                 throw new Exception(
                     $"Correios auth falhou | HTTP {(int)res.StatusCode} {res.ReasonPhrase} | " +
-                    $"Cartao={_cartao} | Body={( string.IsNullOrEmpty(json) ? "(vazio)" : json )}");
+                    $"Cartao={_cartao} | Contrato={_contrato} | DR={_dr} | " +
+                    $"Body={( string.IsNullOrEmpty(json) ? "(vazio)" : json )}");
 
             dynamic data = JsonConvert.DeserializeObject(json);
             _cachedToken = (string)data.token;
@@ -151,7 +180,8 @@ namespace Maryar.Api.Services
 
             if (!res.IsSuccessStatusCode)
                 throw new Exception(
-                    $"Correios: erro ao calcular {nomeServico} | HTTP {(int)res.StatusCode} {res.ReasonPhrase} | Body={( string.IsNullOrEmpty(json) ? "(vazio)" : json )}");
+                    $"Correios: erro ao calcular {nomeServico} | HTTP {(int)res.StatusCode} {res.ReasonPhrase} | " +
+                    $"Body={( string.IsNullOrEmpty(json) ? "(vazio)" : json )}");
 
             dynamic data  = JsonConvert.DeserializeObject(json);
             dynamic item  = data[0];
@@ -189,14 +219,5 @@ namespace Maryar.Api.Services
                 ? new List<ShippingOption> { pac, sedex }
                 : new List<ShippingOption> { sedex, pac };
         }
-    }
-
-    public class PackageInfo
-    {
-        public string PesoKg      { get; set; }
-        public string Comprimento { get; set; }
-        public string Largura     { get; set; }
-        public string Altura      { get; set; }
-        public string CaixaCodigo { get; set; }
     }
 }
