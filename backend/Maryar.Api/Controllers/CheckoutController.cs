@@ -13,13 +13,6 @@ public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
     if (method == "credit_card" && req.CreditCard == null)
         return Content(HttpStatusCode.BadRequest, new { error = "Dados do cartao ausentes." });
 
-    // ── BLOCO DIAGNÓSTICO: captura erros síncronos com mensagem clara ──
-    Guid orderId;
-    string orderNumber;
-    PricingService.PricingResult pricing;
-    Guid userId;
-    Order order;
-
     try
     {
         var cartId = ResolveCartId();
@@ -35,7 +28,7 @@ public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
             .Where(p => p != null)
             .ToDictionary(p => p.Id, p => p);
 
-        pricing = PricingService.Calculate(cartItems, productsById);
+        var pricing = PricingService.Calculate(cartItems, productsById);
         if (pricing.Total <= 0)
             return Content(HttpStatusCode.BadRequest, new { error = "Nao foi possivel calcular o total." });
 
@@ -67,6 +60,7 @@ public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
         };
 
         var currentUserId = JwtAuthAttribute.CurrentUserId();
+        Guid userId;
         if (currentUserId.HasValue)
         {
             userId = currentUserId.Value;
@@ -77,10 +71,10 @@ public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
             userId = _users.UpsertByEmail(profileDto);
         }
 
-        orderId     = Guid.NewGuid();
-        orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+        var orderId     = Guid.NewGuid();
+        var orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
 
-        order = new Order
+        var order = new Order
         {
             Id                   = orderId,
             OrderNumber          = orderNumber,
@@ -100,8 +94,8 @@ public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
             ShippingFee          = pricing.ShippingFee,
             Discount             = pricing.Discount,
             Total                = pricing.Total,
-            Coupon               = coupon?.Slug,
-            DealerId             = coupon?.DealerId,
+            Coupon               = coupon != null ? coupon.Slug : null,
+            DealerId             = coupon != null ? coupon.DealerId : (Guid?)null,
             SalesCommission      = salesCommission,
             PaymentMethod        = method,
             PaymentStatus        = "pending",
@@ -110,21 +104,7 @@ public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
 
         foreach (var it in pricing.Items) it.OrderId = orderId;
         _orders.Create(order, pricing.Items);
-    }
-    catch (Exception ex)
-    {
-        // Retorna o erro real para diagnóstico — remova ou restrinja após identificar o problema
-        return Content(HttpStatusCode.InternalServerError, new
-        {
-            error = "Erro interno antes do pagamento.",
-            detalhe = ex.GetType().Name + ": " + ex.Message,
-            origem = ex.StackTrace?.Split('\n')[0]?.Trim()
-        });
-    }
-    // ── FIM DO BLOCO DIAGNÓSTICO ──
 
-    try
-    {
         var customerId = await _asaas.GetOrCreateCustomerAsync(req.Customer);
 
         if (method == "pix")
@@ -166,7 +146,12 @@ public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
     }
     catch (Exception ex)
     {
-        _orders.UpdatePaymentStatus(orderId, "failed", "canceled");
-        return Content(HttpStatusCode.BadGateway, new { error = "Falha no pagamento: " + ex.Message });
+        // DIAGNÓSTICO — remover após identificar o erro
+        return Content(HttpStatusCode.InternalServerError, new
+        {
+            error   = "Erro: " + ex.GetType().Name,
+            detalhe = ex.Message,
+            origem  = ex.StackTrace?.Split('\n')[0]?.Trim()
+        });
     }
 }
