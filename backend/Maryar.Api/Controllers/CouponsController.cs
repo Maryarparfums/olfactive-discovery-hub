@@ -5,7 +5,7 @@ using MySql.Data.MySqlClient;
 
 namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("coupons")]
+    [RoutePrefix("coupons")]          // ← só isso muda
     public class CouponsController : ApiController
     {
         private readonly string _conn =
