@@ -8,14 +8,13 @@ using MySql.Data.MySqlClient;
 
 namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("api/shipping")]
+    [RoutePrefix("shipping")]
     public class ShippingController : ApiController
     {
         private string ConnStr =>
             ConfigurationManager.ConnectionStrings["MaryarDb"].ConnectionString;
 
-        // GET api/shipping/calculate?cep=01310100&items=PROD_ID1:2,PROD_ID2:1
-        // items = lista de "productId:quantidade" separados por vírgula
+        // GET /api/shipping/calculate?cep=01310100&items=PROD_ID1:2,PROD_ID2:1
         [HttpGet, Route("calculate")]
         public async Task<IHttpActionResult> Calculate(
             [FromUri] string cep,
@@ -48,7 +47,6 @@ namespace Maryar.Api.Controllers
             }
         }
 
-        // Faz parse da query string "id1:qtd1,id2:qtd2"
         private List<(string ProductId, int Qty)> ParseCartItems(string items)
         {
             var result = new List<(string, int)>();
@@ -63,14 +61,12 @@ namespace Maryar.Api.Controllers
             return result;
         }
 
-        // Busca weight_g e box_size_code de cada produto no banco MySQL
         private async Task<List<CartItemInfo>> BuscarDadosProdutos(
             MySqlConnection conn,
             List<(string ProductId, int Qty)> cartItems)
         {
             var result = new List<CartItemInfo>();
 
-            // Se não vieram itens, usa fallback (caixa P, 300g) para manter compatibilidade
             if (cartItems.Count == 0)
             {
                 result.Add(new CartItemInfo
@@ -85,7 +81,6 @@ namespace Maryar.Api.Controllers
 
             foreach (var (productId, qty) in cartItems)
             {
-                // Nota MySQL: GetInt32/GetString só aceitam índice — usamos reader["coluna"] e Convert
                 var cmd = new MySqlCommand(
                     "SELECT weight_g, box_size_code FROM products WHERE id = @id AND active = 1 LIMIT 1",
                     conn);
@@ -109,7 +104,6 @@ namespace Maryar.Api.Controllers
             return result;
         }
 
-        // Busca o catálogo de caixas do banco MySQL
         private async Task<List<BoxSize>> BuscarCaixas(MySqlConnection conn)
         {
             var result = new List<BoxSize>();
