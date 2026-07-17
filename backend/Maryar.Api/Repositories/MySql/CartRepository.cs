@@ -6,252 +6,314 @@ using Maryar.Api.Repositories.Interfaces;
 
 namespace Maryar.Api.Repositories.MySql
 {
-  public class CartRepository : ICartRepository
-  {
-      private readonly IConnectionFactory _factory;
-      public CartRepository(IConnectionFactory factory) { _factory = factory; }
-      public CartRepository() : this(new MySqlConnectionFactory()) { }
+    public class CartRepository : ICartRepository
+    {
+        private readonly IConnectionFactory _factory;
+        public CartRepository(IConnectionFactory factory) { _factory = factory; }
+        public CartRepository() : this(new MySqlConnectionFactory()) { }
 
-      // ── GetOrCreate ──────────────────────────────────────────────────────
-      public Cart GetOrCreate(Guid? userId, string anonymousToken)
-      {
-          using (var cn = _factory.Create())
-          {
-              using (var cmd = cn.CreateCommand())
-              {
-                  cmd.CommandText = userId.HasValue
-                      ? "SELECT id, user_id, anonymous_token, created_at, updated_at FROM carts WHERE user_id = @uid LIMIT 1"
-                      : "SELECT id, user_id, anonymous_token, created_at, updated_at FROM carts WHERE anonymous_token = @tok LIMIT 1";
-                  if (userId.HasValue) cmd.Parameters.AddWithValue("@uid", userId.Value.ToString());
-                  else cmd.Parameters.AddWithValue("@tok", anonymousToken);
+        // ── GetOrCreate ──────────────────────────────────────────────────────
+        // Lógica corrigida para evitar violação de ux_carts_anon:
+        //
+        //  1. userId fornecido → busca carrinho pelo userId
+        //     1a. Encontrou → retorna
+        //     1b. Não encontrou + tem token → busca pelo token e "apropria" (UPDATE user_id, limpa token)
+        //     1c. Nada encontrado → cria carrinho novo só com userId
+        //  2. Só token → busca pelo token; se não existir, cria com token
+        public Cart GetOrCreate(Guid? userId, string anonymousToken)
+        {
+            using (var cn = _factory.Create())
+            {
+                // ── Caminho 1: usuário logado ────────────────────────────────
+                if (userId.HasValue)
+                {
+                    // 1a. Já tem carrinho pelo userId?
+                    Cart userCart = null;
+                    using (var cmd = cn.CreateCommand())
+                    {
+                        cmd.CommandText =
+                            "SELECT id, user_id, anonymous_token, created_at, updated_at " +
+                            "FROM carts WHERE user_id = @uid LIMIT 1";
+                        cmd.Parameters.AddWithValue("@uid", userId.Value.ToString());
+                        using (var r = cmd.ExecuteReader())
+                            if (r.Read()) userCart = ReadCart(r);
+                    }
+                    if (userCart != null) return userCart;
 
-                  using (var r = cmd.ExecuteReader())
-                  {
-                      if (r.Read())
-                          return new Cart
-                          {
-                              Id             = Guid.Parse(r["id"].ToString()),
-                              UserId         = r["user_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["user_id"].ToString()),
-                              AnonymousToken = r["anonymous_token"] == DBNull.Value ? null : r["anonymous_token"].ToString(),
-                              CreatedAt      = Convert.ToDateTime(r["created_at"]),
-                              UpdatedAt      = Convert.ToDateTime(r["updated_at"])
-                          };
-                  }
-              }
+                    // 1b. Tem token de visitante? Apropria o carrinho existente
+                    if (!string.IsNullOrEmpty(anonymousToken))
+                    {
+                        Cart guestCart = null;
+                        using (var cmd = cn.CreateCommand())
+                        {
+                            cmd.CommandText =
+                                "SELECT id, user_id, anonymous_token, created_at, updated_at " +
+                                "FROM carts WHERE anonymous_token = @tok LIMIT 1";
+                            cmd.Parameters.AddWithValue("@tok", anonymousToken);
+                            using (var r = cmd.ExecuteReader())
+                                if (r.Read()) guestCart = ReadCart(r);
+                        }
 
-              var id = Guid.NewGuid();
-              using (var cmd = cn.CreateCommand())
-              {
-                  cmd.CommandText = "INSERT INTO carts (id, user_id, anonymous_token) VALUES (@id, @uid, @tok)";
-                  cmd.Parameters.AddWithValue("@id",  id.ToString());
-                  cmd.Parameters.AddWithValue("@uid", (object)userId?.ToString() ?? DBNull.Value);
-                  cmd.Parameters.AddWithValue("@tok", (object)anonymousToken ?? DBNull.Value);
-                  cmd.ExecuteNonQuery();
-              }
+                        if (guestCart != null)
+                        {
+                            // Transforma o carrinho de visitante no carrinho do usuário
+                            using (var cmd = cn.CreateCommand())
+                            {
+                                cmd.CommandText =
+                                    "UPDATE carts SET user_id = @uid, anonymous_token = NULL " +
+                                    "WHERE id = @id";
+                                cmd.Parameters.AddWithValue("@uid", userId.Value.ToString());
+                                cmd.Parameters.AddWithValue("@id",  guestCart.Id.ToString());
+                                cmd.ExecuteNonQuery();
+                            }
+                            guestCart.UserId         = userId;
+                            guestCart.AnonymousToken = null;
+                            return guestCart;
+                        }
+                    }
 
-              return new Cart
-              {
-                  Id             = id,
-                  UserId         = userId,
-                  AnonymousToken = anonymousToken,
-                  CreatedAt      = DateTime.UtcNow,
-                  UpdatedAt      = DateTime.UtcNow
-              };
-          }
-      }
+                    // 1c. Nenhum carrinho encontrado — cria novo para o usuário
+                    var newId = Guid.NewGuid();
+                    using (var cmd = cn.CreateCommand())
+                    {
+                        cmd.CommandText =
+                            "INSERT INTO carts (id, user_id, anonymous_token) VALUES (@id, @uid, NULL)";
+                        cmd.Parameters.AddWithValue("@id",  newId.ToString());
+                        cmd.Parameters.AddWithValue("@uid", userId.Value.ToString());
+                        cmd.ExecuteNonQuery();
+                    }
+                    return new Cart
+                    {
+                        Id             = newId,
+                        UserId         = userId,
+                        AnonymousToken = null,
+                        CreatedAt      = DateTime.UtcNow,
+                        UpdatedAt      = DateTime.UtcNow
+                    };
+                }
 
-      // ── GetById ──────────────────────────────────────────────────────────
-      public Cart GetById(Guid cartId)
-      {
-          using (var cn = _factory.Create())
-          using (var cmd = cn.CreateCommand())
-          {
-              cmd.CommandText = "SELECT id, user_id, anonymous_token, created_at, updated_at FROM carts WHERE id = @id LIMIT 1";
-              cmd.Parameters.AddWithValue("@id", cartId.ToString());
-              using (var r = cmd.ExecuteReader())
-              {
-                  if (!r.Read()) return null;
-                  return new Cart
-                  {
-                      Id             = Guid.Parse(r["id"].ToString()),
-                      UserId         = r["user_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["user_id"].ToString()),
-                      AnonymousToken = r["anonymous_token"] == DBNull.Value ? null : r["anonymous_token"].ToString(),
-                      CreatedAt      = Convert.ToDateTime(r["created_at"]),
-                      UpdatedAt      = Convert.ToDateTime(r["updated_at"])
-                  };
-              }
-          }
-      }
+                // ── Caminho 2: visitante (sem userId) ────────────────────────
+                using (var cmd = cn.CreateCommand())
+                {
+                    cmd.CommandText =
+                        "SELECT id, user_id, anonymous_token, created_at, updated_at " +
+                        "FROM carts WHERE anonymous_token = @tok LIMIT 1";
+                    cmd.Parameters.AddWithValue("@tok", anonymousToken);
+                    using (var r = cmd.ExecuteReader())
+                        if (r.Read()) return ReadCart(r);
+                }
 
-      // ── GetItems ─────────────────────────────────────────────────────────
-      // Inclui variant_id e volume_ml via LEFT JOIN em product_variants
-      public IEnumerable<CartItem> GetItems(Guid cartId)
-      {
-          var list = new List<CartItem>();
-          using (var cn = _factory.Create())
-          using (var cmd = cn.CreateCommand())
-          {
-              cmd.CommandText =
-                  "SELECT ci.id, ci.cart_id, ci.product_id, ci.variant_id, ci.volume_ml, " +
-                  "       ci.quantity, ci.unit_price, " +
-                  "       p.slug AS product_slug, p.name AS product_name, " +
-                  "       COALESCE(pv.image_url, p.image_url) AS product_image, " +
-                  "       b.name AS brand_name " +
-                  "FROM cart_items ci " +
-                  "INNER JOIN products         p  ON p.id  = ci.product_id " +
-                  "INNER JOIN brands           b  ON b.id  = p.brand_id " +
-                  "LEFT  JOIN product_variants pv ON pv.id = ci.variant_id " +
-                  "WHERE ci.cart_id = @cid";
-              cmd.Parameters.AddWithValue("@cid", cartId.ToString());
-              using (var r = cmd.ExecuteReader())
-                  while (r.Read())
-                      list.Add(new CartItem
-                      {
-                          Id           = Guid.Parse(r["id"].ToString()),
-                          CartId       = Guid.Parse(r["cart_id"].ToString()),
-                          ProductId    = Guid.Parse(r["product_id"].ToString()),
-                          VariantId    = r["variant_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["variant_id"].ToString()),
-                          VolumeMl     = r["volume_ml"]  == DBNull.Value ? (int?)null  : Convert.ToInt32(r["volume_ml"]),
-                          Quantity     = Convert.ToInt32(r["quantity"]),
-                          UnitPrice    = Convert.ToDecimal(r["unit_price"]),
-                          ProductSlug  = r["product_slug"].ToString(),
-                          ProductName  = r["product_name"].ToString(),
-                          ProductImage = r["product_image"] == DBNull.Value ? null : r["product_image"].ToString(),
-                          BrandName    = r["brand_name"].ToString()
-                      });
-          }
-          return list;
-      }
+                var anonId = Guid.NewGuid();
+                using (var cmd = cn.CreateCommand())
+                {
+                    cmd.CommandText =
+                        "INSERT INTO carts (id, user_id, anonymous_token) VALUES (@id, NULL, @tok)";
+                    cmd.Parameters.AddWithValue("@id",  anonId.ToString());
+                    cmd.Parameters.AddWithValue("@tok", anonymousToken);
+                    cmd.ExecuteNonQuery();
+                }
+                return new Cart
+                {
+                    Id             = anonId,
+                    UserId         = null,
+                    AnonymousToken = anonymousToken,
+                    CreatedAt      = DateTime.UtcNow,
+                    UpdatedAt      = DateTime.UtcNow
+                };
+            }
+        }
 
-      // ── GetItem ──────────────────────────────────────────────────────────
-      // SQL construído dinamicamente para evitar problemas do MySql.Data
-      // com <=> e parâmetros nulos. Variantes diferentes = linhas separadas.
-      public CartItem GetItem(Guid cartId, Guid productId, Guid? variantId)
-      {
-          using (var cn = _factory.Create())
-          using (var cmd = cn.CreateCommand())
-          {
-              if (variantId.HasValue)
-              {
-                  // Produto com variante selecionada: compara UUID exato
-                  cmd.CommandText =
-                      "SELECT id, cart_id, product_id, variant_id, volume_ml, quantity, unit_price " +
-                      "FROM cart_items " +
-                      "WHERE cart_id = @cid AND product_id = @pid AND variant_id = @vid " +
-                      "LIMIT 1";
-                  cmd.Parameters.AddWithValue("@cid", cartId.ToString());
-                  cmd.Parameters.AddWithValue("@pid", productId.ToString());
-                  cmd.Parameters.AddWithValue("@vid", variantId.Value.ToString());
-              }
-              else
-              {
-                  // Produto sem variante: garante que só acha linha sem variante
-                  cmd.CommandText =
-                      "SELECT id, cart_id, product_id, variant_id, volume_ml, quantity, unit_price " +
-                      "FROM cart_items " +
-                      "WHERE cart_id = @cid AND product_id = @pid AND variant_id IS NULL " +
-                      "LIMIT 1";
-                  cmd.Parameters.AddWithValue("@cid", cartId.ToString());
-                  cmd.Parameters.AddWithValue("@pid", productId.ToString());
-              }
+        // ── GetById ──────────────────────────────────────────────────────────
+        public Cart GetById(Guid cartId)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText =
+                    "SELECT id, user_id, anonymous_token, created_at, updated_at " +
+                    "FROM carts WHERE id = @id LIMIT 1";
+                cmd.Parameters.AddWithValue("@id", cartId.ToString());
+                using (var r = cmd.ExecuteReader())
+                {
+                    if (!r.Read()) return null;
+                    return ReadCart(r);
+                }
+            }
+        }
 
-              using (var r = cmd.ExecuteReader())
-              {
-                  if (!r.Read()) return null;
-                  return new CartItem
-                  {
-                      Id        = Guid.Parse(r["id"].ToString()),
-                      CartId    = Guid.Parse(r["cart_id"].ToString()),
-                      ProductId = Guid.Parse(r["product_id"].ToString()),
-                      VariantId = r["variant_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["variant_id"].ToString()),
-                      VolumeMl  = r["volume_ml"]  == DBNull.Value ? (int?)null  : Convert.ToInt32(r["volume_ml"]),
-                      Quantity  = Convert.ToInt32(r["quantity"]),
-                      UnitPrice = Convert.ToDecimal(r["unit_price"])
-                  };
-              }
-          }
-      }
+        // ── GetItems ─────────────────────────────────────────────────────────
+        public IEnumerable<CartItem> GetItems(Guid cartId)
+        {
+            var list = new List<CartItem>();
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText =
+                    "SELECT ci.id, ci.cart_id, ci.product_id, ci.variant_id, ci.volume_ml, " +
+                    "       ci.quantity, ci.unit_price, " +
+                    "       p.slug AS product_slug, p.name AS product_name, " +
+                    "       COALESCE(pv.image_url, p.image_url) AS product_image, " +
+                    "       b.name AS brand_name " +
+                    "FROM cart_items ci " +
+                    "INNER JOIN products         p  ON p.id  = ci.product_id " +
+                    "INNER JOIN brands           b  ON b.id  = p.brand_id " +
+                    "LEFT  JOIN product_variants pv ON pv.id = ci.variant_id " +
+                    "WHERE ci.cart_id = @cid";
+                cmd.Parameters.AddWithValue("@cid", cartId.ToString());
+                using (var r = cmd.ExecuteReader())
+                    while (r.Read())
+                        list.Add(new CartItem
+                        {
+                            Id           = Guid.Parse(r["id"].ToString()),
+                            CartId       = Guid.Parse(r["cart_id"].ToString()),
+                            ProductId    = Guid.Parse(r["product_id"].ToString()),
+                            VariantId    = r["variant_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["variant_id"].ToString()),
+                            VolumeMl     = r["volume_ml"]  == DBNull.Value ? (int?)null  : Convert.ToInt32(r["volume_ml"]),
+                            Quantity     = Convert.ToInt32(r["quantity"]),
+                            UnitPrice    = Convert.ToDecimal(r["unit_price"]),
+                            ProductSlug  = r["product_slug"].ToString(),
+                            ProductName  = r["product_name"].ToString(),
+                            ProductImage = r["product_image"] == DBNull.Value ? null : r["product_image"].ToString(),
+                            BrandName    = r["brand_name"].ToString()
+                        });
+            }
+            return list;
+        }
 
-      // ── AddItem ──────────────────────────────────────────────────────────
-      // Se já existe item com mesmo produto + mesma variante, soma a quantidade.
-      // Variantes diferentes do mesmo produto viram linhas separadas.
-      public Guid AddItem(Guid cartId, Guid productId, Guid? variantId, int? volumeMl, int qty, decimal unitPrice)
-      {
-          var existing = GetItem(cartId, productId, variantId);
-          if (existing != null)
-          {
-              UpdateItemQty(existing.Id, existing.Quantity + qty);
-              return existing.Id;
-          }
+        // ── GetItem ──────────────────────────────────────────────────────────
+        public CartItem GetItem(Guid cartId, Guid productId, Guid? variantId)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                if (variantId.HasValue)
+                {
+                    cmd.CommandText =
+                        "SELECT id, cart_id, product_id, variant_id, volume_ml, quantity, unit_price " +
+                        "FROM cart_items " +
+                        "WHERE cart_id = @cid AND product_id = @pid AND variant_id = @vid LIMIT 1";
+                    cmd.Parameters.AddWithValue("@cid", cartId.ToString());
+                    cmd.Parameters.AddWithValue("@pid", productId.ToString());
+                    cmd.Parameters.AddWithValue("@vid", variantId.Value.ToString());
+                }
+                else
+                {
+                    cmd.CommandText =
+                        "SELECT id, cart_id, product_id, variant_id, volume_ml, quantity, unit_price " +
+                        "FROM cart_items " +
+                        "WHERE cart_id = @cid AND product_id = @pid AND variant_id IS NULL LIMIT 1";
+                    cmd.Parameters.AddWithValue("@cid", cartId.ToString());
+                    cmd.Parameters.AddWithValue("@pid", productId.ToString());
+                }
 
-          var id = Guid.NewGuid();
-          using (var cn = _factory.Create())
-          using (var cmd = cn.CreateCommand())
-          {
-              cmd.CommandText =
-                  "INSERT INTO cart_items (id, cart_id, product_id, variant_id, volume_ml, quantity, unit_price) " +
-                  "VALUES (@id, @cid, @pid, @vid, @vml, @q, @up)";
-              cmd.Parameters.AddWithValue("@id",  id.ToString());
-              cmd.Parameters.AddWithValue("@cid", cartId.ToString());
-              cmd.Parameters.AddWithValue("@pid", productId.ToString());
-              cmd.Parameters.AddWithValue("@vid", (object)(variantId?.ToString()) ?? DBNull.Value);
-              cmd.Parameters.AddWithValue("@vml", (object)volumeMl ?? DBNull.Value);
-              cmd.Parameters.AddWithValue("@q",   qty);
-              cmd.Parameters.AddWithValue("@up",  unitPrice);
-              cmd.ExecuteNonQuery();
-          }
+                using (var r = cmd.ExecuteReader())
+                {
+                    if (!r.Read()) return null;
+                    return new CartItem
+                    {
+                        Id        = Guid.Parse(r["id"].ToString()),
+                        CartId    = Guid.Parse(r["cart_id"].ToString()),
+                        ProductId = Guid.Parse(r["product_id"].ToString()),
+                        VariantId = r["variant_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["variant_id"].ToString()),
+                        VolumeMl  = r["volume_ml"]  == DBNull.Value ? (int?)null  : Convert.ToInt32(r["volume_ml"]),
+                        Quantity  = Convert.ToInt32(r["quantity"]),
+                        UnitPrice = Convert.ToDecimal(r["unit_price"])
+                    };
+                }
+            }
+        }
 
-          TouchCart(cartId);
-          return id;
-      }
+        // ── AddItem ──────────────────────────────────────────────────────────
+        public Guid AddItem(Guid cartId, Guid productId, Guid? variantId, int? volumeMl, int qty, decimal unitPrice)
+        {
+            var existing = GetItem(cartId, productId, variantId);
+            if (existing != null)
+            {
+                UpdateItemQty(existing.Id, existing.Quantity + qty);
+                return existing.Id;
+            }
 
-      // ── UpdateItemQty ────────────────────────────────────────────────────
-      public void UpdateItemQty(Guid itemId, int qty)
-      {
-          using (var cn = _factory.Create())
-          using (var cmd = cn.CreateCommand())
-          {
-              cmd.CommandText = "UPDATE cart_items SET quantity = @q WHERE id = @id";
-              cmd.Parameters.AddWithValue("@q",  qty);
-              cmd.Parameters.AddWithValue("@id", itemId.ToString());
-              cmd.ExecuteNonQuery();
-          }
-      }
+            var id = Guid.NewGuid();
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText =
+                    "INSERT INTO cart_items (id, cart_id, product_id, variant_id, volume_ml, quantity, unit_price) " +
+                    "VALUES (@id, @cid, @pid, @vid, @vml, @q, @up)";
+                cmd.Parameters.AddWithValue("@id",  id.ToString());
+                cmd.Parameters.AddWithValue("@cid", cartId.ToString());
+                cmd.Parameters.AddWithValue("@pid", productId.ToString());
+                cmd.Parameters.AddWithValue("@vid", (object)(variantId?.ToString()) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@vml", (object)volumeMl ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@q",   qty);
+                cmd.Parameters.AddWithValue("@up",  unitPrice);
+                cmd.ExecuteNonQuery();
+            }
 
-      // ── RemoveItem ───────────────────────────────────────────────────────
-      public void RemoveItem(Guid itemId)
-      {
-          using (var cn = _factory.Create())
-          using (var cmd = cn.CreateCommand())
-          {
-              cmd.CommandText = "DELETE FROM cart_items WHERE id = @id";
-              cmd.Parameters.AddWithValue("@id", itemId.ToString());
-              cmd.ExecuteNonQuery();
-          }
-      }
+            TouchCart(cartId);
+            return id;
+        }
 
-      // ── Clear ────────────────────────────────────────────────────────────
-      public void Clear(Guid cartId)
-      {
-          using (var cn = _factory.Create())
-          using (var cmd = cn.CreateCommand())
-          {
-              cmd.CommandText = "DELETE FROM cart_items WHERE cart_id = @cid";
-              cmd.Parameters.AddWithValue("@cid", cartId.ToString());
-              cmd.ExecuteNonQuery();
-          }
-      }
+        // ── UpdateItemQty ────────────────────────────────────────────────────
+        public void UpdateItemQty(Guid itemId, int qty)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE cart_items SET quantity = @q WHERE id = @id";
+                cmd.Parameters.AddWithValue("@q",  qty);
+                cmd.Parameters.AddWithValue("@id", itemId.ToString());
+                cmd.ExecuteNonQuery();
+            }
+        }
 
-      // ── TouchCart (privado) ──────────────────────────────────────────────
-      private void TouchCart(Guid cartId)
-      {
-          using (var cn = _factory.Create())
-          using (var cmd = cn.CreateCommand())
-          {
-              cmd.CommandText = "UPDATE carts SET updated_at = CURRENT_TIMESTAMP WHERE id = @id";
-              cmd.Parameters.AddWithValue("@id", cartId.ToString());
-              cmd.ExecuteNonQuery();
-          }
-      }
-  }
+        // ── RemoveItem ───────────────────────────────────────────────────────
+        public void RemoveItem(Guid itemId)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM cart_items WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id", itemId.ToString());
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        // ── Clear ────────────────────────────────────────────────────────────
+        public void Clear(Guid cartId)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM cart_items WHERE cart_id = @cid";
+                cmd.Parameters.AddWithValue("@cid", cartId.ToString());
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        // ── TouchCart ────────────────────────────────────────────────────────
+        private void TouchCart(Guid cartId)
+        {
+            using (var cn = _factory.Create())
+            using (var cmd = cn.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE carts SET updated_at = NOW() WHERE id = @id";
+                cmd.Parameters.AddWithValue("@id", cartId.ToString());
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        // ── Helper ───────────────────────────────────────────────────────────
+        private static Cart ReadCart(System.Data.IDataReader r)
+        {
+            return new Cart
+            {
+                Id             = Guid.Parse(r["id"].ToString()),
+                UserId         = r["user_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["user_id"].ToString()),
+                AnonymousToken = r["anonymous_token"] == DBNull.Value ? null : r["anonymous_token"].ToString(),
+                CreatedAt      = Convert.ToDateTime(r["created_at"]),
+                UpdatedAt      = Convert.ToDateTime(r["updated_at"])
+            };
+        }
+    }
 }
