@@ -54,24 +54,17 @@ namespace Maryar.Api.Controllers
             _users    = users;
         }
 
+        // Passa userId E token — o CartRepository resolve qual usar/migrar
         private Guid? ResolveCartId()
         {
             var userId = JwtAuthAttribute.CurrentUserId();
             string token = null;
-
-            // Só usa o token anônimo se o usuário NÃO estiver logado.
-            // Quando logado, o carrinho é resolvido pelo userId — passar o token
-            // causaria violação de unique key (ux_carts_anon) se ele já existir.
-            if (!userId.HasValue)
+            var ctx = HttpContext.Current;
+            if (ctx != null)
             {
-                var ctx = HttpContext.Current;
-                if (ctx != null)
-                {
-                    var c = ctx.Request.Cookies[CookieName];
-                    token = c?.Value;
-                }
+                var c = ctx.Request.Cookies[CookieName];
+                token = c?.Value;
             }
-
             if (!userId.HasValue && string.IsNullOrEmpty(token)) return null;
             return _carts.GetOrCreate(userId, token).Id;
         }
