@@ -47,23 +47,23 @@ namespace Maryar.Api.Controllers
             }
         }
 
-        private List<(string ProductId, int Qty)> ParseCartItems(string items)
+        private List<Tuple<string, int>> ParseCartItems(string items)
         {
-            var result = new List<(string, int)>();
+            var result = new List<Tuple<string, int>>();
             if (string.IsNullOrWhiteSpace(items)) return result;
 
             foreach (var part in items.Split(','))
             {
                 var seg = part.Trim().Split(':');
                 if (seg.Length == 2 && int.TryParse(seg[1], out int qty) && qty > 0)
-                    result.Add((seg[0].Trim(), qty));
+                    result.Add(Tuple.Create(seg[0].Trim(), qty));
             }
             return result;
         }
 
         private async Task<List<CartItemInfo>> BuscarDadosProdutos(
             MySqlConnection conn,
-            List<(string ProductId, int Qty)> cartItems)
+            List<Tuple<string, int>> cartItems)
         {
             var result = new List<CartItemInfo>();
 
@@ -79,8 +79,11 @@ namespace Maryar.Api.Controllers
                 return result;
             }
 
-            foreach (var (productId, qty) in cartItems)
+            foreach (var item in cartItems)
             {
+                var productId = item.Item1;
+                var qty       = item.Item2;
+
                 var cmd = new MySqlCommand(
                     "SELECT weight_g, box_size_code FROM products WHERE id = @id AND active = 1 LIMIT 1",
                     conn);
