@@ -36,7 +36,7 @@ namespace Maryar.Api.Controllers
             public string  Slug       { get; set; }
             public decimal Percent    { get; set; } // desconto % para o cliente
             public Guid?   DealerId   { get; set; } // user_id do dono do cupom
-            public decimal Commission { get; set; } // comissão % do dealer
+            public decimal Commission { get; set; } // comissao % do dealer
         }
 
         public CheckoutController()
@@ -48,8 +48,11 @@ namespace Maryar.Api.Controllers
                                   IOrderRepository orders, AsaasClient asaas,
                                   IUserRepository users)
         {
-            _carts = carts; _products = products; _orders = orders;
-            _asaas = asaas; _users = users;
+            _carts    = carts;
+            _products = products;
+            _orders   = orders;
+            _asaas    = asaas;
+            _users    = users;
         }
 
         private Guid? ResolveCartId()
@@ -76,42 +79,53 @@ namespace Maryar.Api.Controllers
                 var principal = new JwtService().ValidateToken(auth.Parameter);
                 Thread.CurrentPrincipal = principal;
             }
-            catch { /* token inválido — trata como visitante */ }
+            catch { /* token invalido - trata como visitante */ }
         }
 
         // Busca slug, percent, user_id e commission do cupom no banco.
-        // Retorna null se o slug não existir ou estiver vazio.
+        // Retorna null se o slug nao existir ou estiver vazio.
+        // Lanca InvalidOperationException com mensagem clara em caso de falha de BD.
         private CouponInfo LookupCoupon(string slug)
         {
             if (string.IsNullOrWhiteSpace(slug)) return null;
 
-            using (var con = new MySqlConnection(_conn))
+            try
             {
-                con.Open();
-                using (var cmd = new MySqlCommand(
-                    @"SELECT slug, percent, user_id, commission
-                        FROM coupons
-                       WHERE UPPER(slug) = UPPER(@slug)
-                       LIMIT 1", con))
+                using (var con = new MySqlConnection(_conn))
                 {
-                    cmd.Parameters.AddWithValue("@slug", slug.Trim());
-                    using (var rd = cmd.ExecuteReader())
+                    con.Open();
+                    using (var cmd = new MySqlCommand(
+                        "SELECT slug, percent, user_id, commission " +
+                        "FROM coupons " +
+                        "WHERE UPPER(slug) = UPPER(@slug) " +
+                        "LIMIT 1", con))
                     {
-                        if (!rd.Read()) return null;
-
-                        Guid? dealerId = null;
-                        if (!rd.IsDBNull(rd.GetOrdinal("user_id")))
-                            dealerId = rd.GetGuid("user_id");
-
-                        return new CouponInfo
+                        cmd.Parameters.AddWithValue("@slug", slug.Trim());
+                        using (var rd = cmd.ExecuteReader())
                         {
-                            Slug       = rd.GetString("slug"),
-                            Percent    = rd.GetDecimal("percent"),
-                            DealerId   = dealerId,
-                            Commission = rd.GetDecimal("commission")
-                        };
+                            if (!rd.Read()) return null;
+
+                            Guid? dealerId = null;
+                            if (!rd.IsDBNull(rd.GetOrdinal("user_id")))
+                            {
+                                var raw = rd.GetString(rd.GetOrdinal("user_id"));
+                                if (Guid.TryParse(raw, out var g)) dealerId = g;
+                            }
+
+                            return new CouponInfo
+                            {
+                                Slug       = rd.GetString(rd.GetOrdinal("slug")),
+                                Percent    = rd.GetDecimal(rd.GetOrdinal("percent")),
+                                DealerId   = dealerId,
+                                Commission = rd.GetDecimal(rd.GetOrdinal("commission"))
+                            };
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Erro ao consultar cupom: " + ex.Message, ex);
             }
         }
 
@@ -124,11 +138,11 @@ namespace Maryar.Api.Controllers
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
 
             if (req.ShippingOption == null || req.ShippingOption.Price <= 0)
-                return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opção de frete antes de continuar." });
+                return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opcao de frete antes de continuar." });
 
             var method = (req.PaymentMethod ?? "pix").ToLower();
             if (method == "credit_card" && req.CreditCard == null)
-                return Content(HttpStatusCode.BadRequest, new { error = "Dados do cartão ausentes." });
+                return Content(HttpStatusCode.BadRequest, new { error = "Dados do cartao ausentes." });
 
             var cartId = ResolveCartId();
             if (!cartId.HasValue)
@@ -145,10 +159,10 @@ namespace Maryar.Api.Controllers
 
             var pricing = PricingService.Calculate(cartItems, productsById);
             if (pricing.Total <= 0)
-                return Content(HttpStatusCode.BadRequest, new { error = "Não foi possível calcular o total." });
+                return Content(HttpStatusCode.BadRequest, new { error = "Nao foi possivel calcular o total." });
 
-            // ── Aplica cupom: desconto + comissão do dealer ──────────────────
-            var coupon         = LookupCoupon(req.CouponSlug);
+            // Aplica cupom: desconto para o cliente + comissao do dealer
+            var coupon          = LookupCoupon(req.CouponSlug);
             var salesCommission = 0m;
 
             if (coupon != null)
@@ -156,11 +170,9 @@ namespace Maryar.Api.Controllers
                 // Desconto concedido ao cliente
                 pricing.Discount += pricing.Subtotal * (coupon.Percent / 100m);
 
-                // Comissão calculada sobre o subtotal dos produtos (antes do desconto),
-                // pois o dealer recebe pelo volume de vendas que trouxe.
+                // Comissao calculada sobre o subtotal (antes do desconto)
                 salesCommission = pricing.Subtotal * (coupon.Commission / 100m);
             }
-            // ────────────────────────────────────────────────────────────────
 
             pricing.ShippingFee = req.ShippingOption.Price;
             pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
@@ -215,13 +227,14 @@ namespace Maryar.Api.Controllers
                 ShippingFee          = pricing.ShippingFee,
                 Discount             = pricing.Discount,
                 Total                = pricing.Total,
-                Coupon               = coupon?.Slug,
-                DealerId             = coupon?.DealerId,
+                Coupon               = coupon != null ? coupon.Slug : null,
+                DealerId             = coupon != null ? coupon.DealerId : (Guid?)null,
                 SalesCommission      = salesCommission,
                 PaymentMethod        = method,
                 PaymentStatus        = "pending",
                 OrderStatus          = "created"
             };
+
             foreach (var it in pricing.Items) it.OrderId = orderId;
             _orders.Create(order, pricing.Items);
 
@@ -262,7 +275,7 @@ namespace Maryar.Api.Controllers
                         OrderId       = orderId,
                         OrderNumber   = orderNumber,
                         PaymentStatus = status,
-                        Message       = status == "paid" ? "Pagamento aprovado!" : "Pagamento em análise."
+                        Message       = status == "paid" ? "Pagamento aprovado!" : "Pagamento em analise."
                     });
                 }
             }
