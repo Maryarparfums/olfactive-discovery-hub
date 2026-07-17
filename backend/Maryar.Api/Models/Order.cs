@@ -25,21 +25,14 @@ namespace Maryar.Api.Models
         public decimal Discount { get; set; }
         public decimal Total { get; set; }
 
-        // Cupom aplicado ao pedido (string vazia quando nenhum cupom foi usado)
         public string Coupon { get; set; }
-
-        // Dealer que indicou (dono do cupom) — null quando sem cupom
         public Guid? DealerId { get; set; }
-
-        // Status do repasse da comissao ao dealer ("pending", "paid", etc.)
         public string StatusCommission { get; set; }
-
-        // Valor monetario da comissao devida ao dealer
         public decimal SalesCommission { get; set; }
 
-        public string PaymentMethod { get; set; } // "pix" | "credit_card"
-        public string PaymentStatus { get; set; } // "pending" | "paid" | "failed" | "refunded"
-        public string OrderStatus { get; set; }   // "created" | "paid" | "shipped" | "delivered" | "canceled"
+        public string PaymentMethod { get; set; }
+        public string PaymentStatus { get; set; }
+        public string OrderStatus { get; set; }
 
         public string InfinitePayChargeId { get; set; }
         public string PixQrCode { get; set; }
