@@ -61,20 +61,13 @@ namespace Maryar.Api.Repositories.MySql
                         cmd.Parameters.AddWithValue("@shipfee", order.ShippingFee);
                         cmd.Parameters.AddWithValue("@disc",    order.Discount);
                         cmd.Parameters.AddWithValue("@total",   order.Total);
-
-                        // Cupom — string vazia quando nenhum cupom foi aplicado
                         cmd.Parameters.AddWithValue("@coupon",  order.Coupon ?? "");
-
-                        // Dealer — NULL quando sem cupom
                         cmd.Parameters.AddWithValue("@dealerid",
                             order.DealerId.HasValue
                                 ? (object)order.DealerId.Value.ToString()
                                 : DBNull.Value);
-
-                        // Status do repasse — "pending" quando ha comissao, vazio caso contrario
                         cmd.Parameters.AddWithValue("@scommst",
                             order.SalesCommission > 0 ? "pending" : "");
-
                         cmd.Parameters.AddWithValue("@scomm",  order.SalesCommission);
                         cmd.Parameters.AddWithValue("@pm",     order.PaymentMethod);
                         cmd.Parameters.AddWithValue("@ps",     order.PaymentStatus);
@@ -126,33 +119,21 @@ namespace Maryar.Api.Repositories.MySql
         public IEnumerable<Order> GetByUserOrToken(Guid? userId, string guestToken)
         {
             var list = new List<Order>();
-
-            if (!userId.HasValue && string.IsNullOrEmpty(guestToken))
-                return list;
+            if (!userId.HasValue && string.IsNullOrEmpty(guestToken)) return list;
 
             using (var cn = _factory.Create())
             using (var cmd = cn.CreateCommand())
             {
                 if (userId.HasValue)
                 {
-                    cmd.CommandText = @"
-                        SELECT * FROM orders
-                        WHERE user_id = @uid
-                        ORDER BY created_at DESC";
+                    cmd.CommandText = @"SELECT * FROM orders WHERE user_id = @uid ORDER BY created_at DESC";
                     cmd.Parameters.AddWithValue("@uid", userId.Value.ToString());
                 }
-                else
-                {
-                    return list;
-                }
+                else return list;
 
                 using (var r = cmd.ExecuteReader())
-                {
-                    while (r.Read())
-                        list.Add(MapOrder(r));
-                }
+                    while (r.Read()) list.Add(MapOrder(r));
             }
-
             return list;
         }
 
@@ -171,7 +152,6 @@ namespace Maryar.Api.Repositories.MySql
             }
         }
 
-        // Mapeia uma linha do DataReader para um objeto Order
         private static Order MapOrder(MySqlDataReader r)
         {
             return new Order
