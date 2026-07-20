@@ -162,71 +162,71 @@ namespace Maryar.Api.Controllers
         [HttpPost, Route("")]
         public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
         {
-            TryAuthenticateRequest();
-
-            if (req?.Customer == null || req.Shipping == null)
-                return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
-
-            if (req.ShippingOption == null)
-                return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opcao de frete antes de continuar." });
-
-            var method = (req.PaymentMethod ?? "pix").ToLower();
-            if (method == "credit_card" && req.CreditCard == null)
-                return Content(HttpStatusCode.BadRequest, new { error = "Dados do cartao ausentes." });
-
-            var cartId = ResolveCartId();
-            if (!cartId.HasValue)
-                return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
-
-            var cartItems = _carts.GetItems(cartId.Value).ToList();
-            if (cartItems.Count == 0)
-                return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
-
-            var productsById = cartItems
-                .Select(ci => _products.GetById(ci.ProductId))
-                .Where(p => p != null)
-                .ToDictionary(p => p.Id, p => p);
-
-            var pricing = PricingService.Calculate(cartItems, productsById);
-            if (pricing.Total <= 0)
-                return Content(HttpStatusCode.BadRequest, new { error = "Nao foi possivel calcular o total." });
-
-            var coupon          = LookupCoupon(req.CouponSlug);
-            var salesCommission = 0m;
-
-            if (coupon != null)
-            {
-                pricing.Discount += pricing.Subtotal * (coupon.Percent / 100m);
-                salesCommission   = pricing.Subtotal * (coupon.Commission / 100m);
-            }
-
-            // Frete grátis quando o cupom tem shipping_fee_coupon = 1
-            pricing.ShippingFee = (coupon != null && coupon.ShippingFeeCoupon)
-                ? 0m
-                : req.ShippingOption.Price;
-
-            pricing.Total = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
-
-            var profileDto = new UserProfileDto
-            {
-                Name        = req.Customer.Name,
-                Email       = req.Customer.Email,
-                Phone       = req.Customer.Phone,
-                Cpf         = req.Customer.Document,
-                Cep         = req.Shipping.Zip,
-                Logradouro  = req.Shipping.Street,
-                Numero      = req.Shipping.Number,
-                Complemento = req.Shipping.Complement,
-                Bairro      = req.Shipping.Neighborhood,
-                Cidade      = req.Shipping.City,
-                Estado      = req.Shipping.State
-            };
-
-            // ✅ Todo o bloco de criação de usuário, pedido e pagamento está
-            //    protegido pelo try/catch. Antes, UpdateProfile e Create ficavam
-            //    fora, causando 500 quando lançavam exceção para usuários logados.
+            // ✅ O método INTEIRO está dentro do try/catch.
+            // Antes, ResolveCartId, GetItems, PricingService.Calculate e LookupCoupon
+            // ficavam fora e causavam 500 sem mensagem de erro para usuários logados.
             try
             {
+                TryAuthenticateRequest();
+
+                if (req?.Customer == null || req.Shipping == null)
+                    return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
+
+                if (req.ShippingOption == null)
+                    return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opcao de frete antes de continuar." });
+
+                var method = (req.PaymentMethod ?? "pix").ToLower();
+                if (method == "credit_card" && req.CreditCard == null)
+                    return Content(HttpStatusCode.BadRequest, new { error = "Dados do cartao ausentes." });
+
+                var cartId = ResolveCartId();
+                if (!cartId.HasValue)
+                    return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
+
+                var cartItems = _carts.GetItems(cartId.Value).ToList();
+                if (cartItems.Count == 0)
+                    return Content(HttpStatusCode.BadRequest, new { error = "Carrinho vazio." });
+
+                var productsById = cartItems
+                    .Select(ci => _products.GetById(ci.ProductId))
+                    .Where(p => p != null)
+                    .ToDictionary(p => p.Id, p => p);
+
+                var pricing = PricingService.Calculate(cartItems, productsById);
+                if (pricing.Total <= 0)
+                    return Content(HttpStatusCode.BadRequest, new { error = "Nao foi possivel calcular o total." });
+
+                var coupon          = LookupCoupon(req.CouponSlug);
+                var salesCommission = 0m;
+
+                if (coupon != null)
+                {
+                    pricing.Discount += pricing.Subtotal * (coupon.Percent / 100m);
+                    salesCommission   = pricing.Subtotal * (coupon.Commission / 100m);
+                }
+
+                // Frete grátis quando o cupom tem shipping_fee_coupon = 1
+                pricing.ShippingFee = (coupon != null && coupon.ShippingFeeCoupon)
+                    ? 0m
+                    : req.ShippingOption.Price;
+
+                pricing.Total = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
+
+                var profileDto = new UserProfileDto
+                {
+                    Name        = req.Customer.Name,
+                    Email       = req.Customer.Email,
+                    Phone       = req.Customer.Phone,
+                    Cpf         = req.Customer.Document,
+                    Cep         = req.Shipping.Zip,
+                    Logradouro  = req.Shipping.Street,
+                    Numero      = req.Shipping.Number,
+                    Complemento = req.Shipping.Complement,
+                    Bairro      = req.Shipping.Neighborhood,
+                    Cidade      = req.Shipping.City,
+                    Estado      = req.Shipping.State
+                };
+
                 var currentUserId = JwtAuthAttribute.CurrentUserId();
                 Guid userId;
                 if (currentUserId.HasValue)
@@ -314,8 +314,10 @@ namespace Maryar.Api.Controllers
             }
             catch (Exception ex)
             {
-                // Retorna o erro real para facilitar o diagnóstico
-                return Content(HttpStatusCode.InternalServerError, new { error = "Erro ao processar pedido: " + ex.Message });
+                // Retorna o erro completo com InnerException para facilitar diagnóstico
+                var inner = ex.InnerException != null ? " | Inner: " + ex.InnerException.Message : "";
+                return Content(HttpStatusCode.InternalServerError,
+                    new { error = "Erro ao processar pedido: " + ex.Message + inner, tipo = ex.GetType().Name });
             }
         }
 
@@ -377,6 +379,7 @@ namespace Maryar.Api.Controllers
             }
             catch (Exception ex)
             {
+                // Relança com contexto, será capturado pelo try/catch do Process
                 throw new InvalidOperationException("Erro ao consultar cupom: " + ex.Message, ex);
             }
         }
