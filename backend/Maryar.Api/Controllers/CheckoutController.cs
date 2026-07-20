@@ -167,7 +167,6 @@ namespace Maryar.Api.Controllers
             if (req?.Customer == null || req.Shipping == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
 
-            // Permite price=0 quando o cupom garante frete grátis
             if (req.ShippingOption == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opcao de frete antes de continuar." });
 
@@ -223,54 +222,57 @@ namespace Maryar.Api.Controllers
                 Estado      = req.Shipping.State
             };
 
-            var currentUserId = JwtAuthAttribute.CurrentUserId();
-            Guid userId;
-            if (currentUserId.HasValue)
-            {
-                userId = currentUserId.Value;
-                _users.UpdateProfile(userId, profileDto);
-            }
-            else
-            {
-                userId = _users.UpsertByEmail(profileDto);
-            }
-
-            var orderId     = Guid.NewGuid();
-            var orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-
-            var order = new Order
-            {
-                Id                   = orderId,
-                OrderNumber          = orderNumber,
-                UserId               = userId,
-                CustomerName         = req.Customer.Name,
-                CustomerEmail        = req.Customer.Email,
-                CustomerDocument     = req.Customer.Document,
-                CustomerPhone        = req.Customer.Phone,
-                ShippingZip          = req.Shipping.Zip,
-                ShippingStreet       = req.Shipping.Street,
-                ShippingNumber       = req.Shipping.Number,
-                ShippingComplement   = req.Shipping.Complement,
-                ShippingNeighborhood = req.Shipping.Neighborhood,
-                ShippingCity         = req.Shipping.City,
-                ShippingState        = req.Shipping.State,
-                Subtotal             = pricing.Subtotal,
-                ShippingFee          = pricing.ShippingFee,
-                Discount             = pricing.Discount,
-                Total                = pricing.Total,
-                Coupon               = coupon != null ? coupon.Slug : null,
-                DealerId             = coupon != null ? coupon.DealerId : (Guid?)null,
-                SalesCommission      = salesCommission,
-                PaymentMethod        = method,
-                PaymentStatus        = "pending",
-                OrderStatus          = "created"
-            };
-
-            foreach (var it in pricing.Items) it.OrderId = orderId;
-            _orders.Create(order, pricing.Items);
-
+            // ✅ Todo o bloco de criação de usuário, pedido e pagamento está
+            //    protegido pelo try/catch. Antes, UpdateProfile e Create ficavam
+            //    fora, causando 500 quando lançavam exceção para usuários logados.
             try
             {
+                var currentUserId = JwtAuthAttribute.CurrentUserId();
+                Guid userId;
+                if (currentUserId.HasValue)
+                {
+                    userId = currentUserId.Value;
+                    _users.UpdateProfile(userId, profileDto);
+                }
+                else
+                {
+                    userId = _users.UpsertByEmail(profileDto);
+                }
+
+                var orderId     = Guid.NewGuid();
+                var orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+
+                var order = new Order
+                {
+                    Id                   = orderId,
+                    OrderNumber          = orderNumber,
+                    UserId               = userId,
+                    CustomerName         = req.Customer.Name,
+                    CustomerEmail        = req.Customer.Email,
+                    CustomerDocument     = req.Customer.Document,
+                    CustomerPhone        = req.Customer.Phone,
+                    ShippingZip          = req.Shipping.Zip,
+                    ShippingStreet       = req.Shipping.Street,
+                    ShippingNumber       = req.Shipping.Number,
+                    ShippingComplement   = req.Shipping.Complement,
+                    ShippingNeighborhood = req.Shipping.Neighborhood,
+                    ShippingCity         = req.Shipping.City,
+                    ShippingState        = req.Shipping.State,
+                    Subtotal             = pricing.Subtotal,
+                    ShippingFee          = pricing.ShippingFee,
+                    Discount             = pricing.Discount,
+                    Total                = pricing.Total,
+                    Coupon               = coupon != null ? coupon.Slug : null,
+                    DealerId             = coupon != null ? coupon.DealerId : (Guid?)null,
+                    SalesCommission      = salesCommission,
+                    PaymentMethod        = method,
+                    PaymentStatus        = "pending",
+                    OrderStatus          = "created"
+                };
+
+                foreach (var it in pricing.Items) it.OrderId = orderId;
+                _orders.Create(order, pricing.Items);
+
                 var customerId = await _asaas.GetOrCreateCustomerAsync(req.Customer);
 
                 if (method == "pix")
@@ -312,8 +314,8 @@ namespace Maryar.Api.Controllers
             }
             catch (Exception ex)
             {
-                _orders.UpdatePaymentStatus(orderId, "failed", "canceled");
-                return Content(HttpStatusCode.BadGateway, new { error = "Falha no pagamento: " + ex.Message });
+                // Retorna o erro real para facilitar o diagnóstico
+                return Content(HttpStatusCode.InternalServerError, new { error = "Erro ao processar pedido: " + ex.Message });
             }
         }
 
