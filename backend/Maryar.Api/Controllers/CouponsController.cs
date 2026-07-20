@@ -5,7 +5,7 @@ using MySql.Data.MySqlClient;
 
 namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("coupons")]          // ← só isso muda
+    [RoutePrefix("coupons")]
     public class CouponsController : ApiController
     {
         private readonly string _conn =
@@ -22,7 +22,8 @@ namespace Maryar.Api.Controllers
             {
                 con.Open();
                 using (var cmd = new MySqlCommand(
-                    "SELECT slug, percent, commission FROM coupons WHERE UPPER(slug) = UPPER(@slug) LIMIT 1",
+                    "SELECT slug, percent, commission, shipping_fee_coupon " +
+                    "FROM coupons WHERE UPPER(slug) = UPPER(@slug) LIMIT 1",
                     con))
                 {
                     cmd.Parameters.AddWithValue("@slug", slug.Trim());
@@ -33,9 +34,10 @@ namespace Maryar.Api.Controllers
 
                         return Ok(new
                         {
-                            slug       = rd.GetString("slug"),
-                            percent    = rd.GetDecimal("percent"),
-                            commission = rd.GetDecimal("commission")
+                            slug              = rd.GetString("slug"),
+                            percent           = rd.GetDecimal("percent"),
+                            commission        = rd.GetDecimal("commission"),
+                            shippingFeeCoupon = rd.GetInt32("shipping_fee_coupon") == 1
                         });
                     }
                 }
