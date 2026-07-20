@@ -54,7 +54,6 @@ namespace Maryar.Api.Controllers
             _users    = users;
         }
 
-        // Passa userId E token — o CartRepository resolve qual usar/migrar
         private Guid? ResolveCartId()
         {
             var userId = JwtAuthAttribute.CurrentUserId();
@@ -79,8 +78,36 @@ namespace Maryar.Api.Controllers
                 var principal = new JwtService().ValidateToken(auth.Parameter);
                 Thread.CurrentPrincipal = principal;
             }
-            catch { /* token invalido - trata como visitante */ }
+            catch { /* token inválido — trata como visitante */ }
         }
+
+        // ─── NOVO: listar pedidos do usuário logado ───────────────────────
+        [HttpGet, Route("orders")]
+        public IHttpActionResult GetOrders()
+        {
+            TryAuthenticateRequest();
+
+            var userId = JwtAuthAttribute.CurrentUserId();
+            if (!userId.HasValue)
+                return Content(HttpStatusCode.Unauthorized, new { error = "Não autenticado." });
+
+            var orders = _orders.GetByUserOrToken(userId, null);
+
+            var result = orders
+                .OrderByDescending(o => o.CreatedAt)
+                .Select(o => new
+                {
+                    id            = o.Id,
+                    orderNumber   = o.OrderNumber,
+                    total         = o.Total,
+                    paymentStatus = o.PaymentStatus,
+                    orderStatus   = o.OrderStatus,
+                    createdAt     = o.CreatedAt
+                });
+
+            return Ok(result);
+        }
+        // ─────────────────────────────────────────────────────────────────
 
         private CouponInfo LookupCoupon(string slug)
         {
