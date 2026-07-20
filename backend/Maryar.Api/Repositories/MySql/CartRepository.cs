@@ -17,8 +17,10 @@ namespace Maryar.Api.Repositories.MySql
         // Casos tratados quando userId está presente:
         //   A) Só carrinho de usuário existe          → retorna ele
         //   B) Só carrinho de visitante existe        → apropria (UPDATE user_id)
-        //   C) Ambos existem                          → migra itens do visitante
-        //                                               para o carrinho do usuário,
+        //   C) Ambos existem                          → mescla itens do visitante
+        //                                               no carrinho do usuário,
+        //                                               somando quantidades de
+        //                                               produtos duplicados,
         //                                               apaga o carrinho visitante
         //   D) Nenhum existe                          → cria carrinho para o usuário
         //
@@ -57,9 +59,56 @@ namespace Maryar.Api.Repositories.MySql
                         }
                     }
 
-                    // Caso C: ambos existem → migra itens e apaga carrinho visitante
+                    // ✅ CORRIGIDO — Caso C: ambos os carrinhos existem.
+                    //
+                    // Antes: UPDATE cart_items SET cart_id = @ucid WHERE cart_id = @gcid
+                    // Isso violava a constraint ux_cart_product quando o mesmo produto
+                    // já existia nos dois carrinhos.
+                    //
+                    // Agora: mesclagem em 3 passos:
+                    //   1. Soma a quantidade dos itens que já estão no carrinho do usuário
+                    //   2. Remove do carrinho visitante os itens já somados (evita duplicate key)
+                    //   3. Move os itens restantes do visitante (sem duplicata) para o usuário
                     if (userCart != null && guestCart != null)
                     {
+                        // Passo 1: soma quantidade dos itens que existem nos dois carrinhos
+                        using (var cmd = cn.CreateCommand())
+                        {
+                            cmd.CommandText = @"
+                                UPDATE cart_items uc
+                                INNER JOIN cart_items gc
+                                    ON  gc.product_id = uc.product_id
+                                    AND gc.cart_id    = @gcid
+                                    AND (
+                                            gc.variant_id = uc.variant_id
+                                         OR (gc.variant_id IS NULL AND uc.variant_id IS NULL)
+                                        )
+                                SET uc.quantity = uc.quantity + gc.quantity
+                                WHERE uc.cart_id = @ucid";
+                            cmd.Parameters.AddWithValue("@ucid", userCart.Id.ToString());
+                            cmd.Parameters.AddWithValue("@gcid", guestCart.Id.ToString());
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        // Passo 2: remove do visitante os itens que foram somados acima
+                        using (var cmd = cn.CreateCommand())
+                        {
+                            cmd.CommandText = @"
+                                DELETE gc FROM cart_items gc
+                                INNER JOIN cart_items uc
+                                    ON  uc.product_id = gc.product_id
+                                    AND uc.cart_id    = @ucid
+                                    AND (
+                                            uc.variant_id = gc.variant_id
+                                         OR (uc.variant_id IS NULL AND gc.variant_id IS NULL)
+                                        )
+                                WHERE gc.cart_id = @gcid";
+                            cmd.Parameters.AddWithValue("@ucid", userCart.Id.ToString());
+                            cmd.Parameters.AddWithValue("@gcid", guestCart.Id.ToString());
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        // Passo 3: move os itens restantes do visitante (sem duplicata)
                         using (var cmd = cn.CreateCommand())
                         {
                             cmd.CommandText =
@@ -68,12 +117,15 @@ namespace Maryar.Api.Repositories.MySql
                             cmd.Parameters.AddWithValue("@gcid", guestCart.Id.ToString());
                             cmd.ExecuteNonQuery();
                         }
+
+                        // Apaga o carrinho do visitante
                         using (var cmd = cn.CreateCommand())
                         {
                             cmd.CommandText = "DELETE FROM carts WHERE id = @id";
                             cmd.Parameters.AddWithValue("@id", guestCart.Id.ToString());
                             cmd.ExecuteNonQuery();
                         }
+
                         return userCart;
                     }
 
