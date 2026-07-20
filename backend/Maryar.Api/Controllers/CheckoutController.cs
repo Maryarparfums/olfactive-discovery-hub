@@ -81,7 +81,7 @@ namespace Maryar.Api.Controllers
             catch { /* token inválido — trata como visitante */ }
         }
 
-        // ─── NOVO: listar pedidos do usuário logado ───────────────────────
+        // ─── Listar pedidos do usuário logado ─────────────────────────────
         [HttpGet, Route("orders")]
         public IHttpActionResult GetOrders()
         {
@@ -107,7 +107,57 @@ namespace Maryar.Api.Controllers
 
             return Ok(result);
         }
-        // ─────────────────────────────────────────────────────────────────
+
+        // ─── Detalhe de um pedido específico ──────────────────────────────
+        [HttpGet, Route("orders/{orderId}")]
+        public IHttpActionResult GetOrderById(Guid orderId)
+        {
+            TryAuthenticateRequest();
+
+            var userId = JwtAuthAttribute.CurrentUserId();
+            if (!userId.HasValue)
+                return Content(HttpStatusCode.Unauthorized, new { error = "Não autenticado." });
+
+            var order = _orders.GetById(orderId);
+            if (order == null)
+                return NotFound();
+
+            // Garante que o pedido pertence ao usuário logado
+            if (order.UserId != userId.Value)
+                return Content(HttpStatusCode.Forbidden, new { error = "Acesso negado." });
+
+            var items = _orders.GetItems(orderId);
+
+            return Ok(new
+            {
+                order = new
+                {
+                    id            = order.Id,
+                    orderNumber   = order.OrderNumber,
+                    total         = order.Total,
+                    subtotal      = order.Subtotal,
+                    shippingFee   = order.ShippingFee,
+                    discount      = order.Discount,
+                    paymentStatus = order.PaymentStatus,
+                    paymentMethod = order.PaymentMethod,
+                    orderStatus   = order.OrderStatus,
+                    customerName  = order.CustomerName,
+                    pixQrCode     = order.PixQrCode,
+                    pixCopyPaste  = order.PixCopyPaste,
+                    createdAt     = order.CreatedAt
+                },
+                items = items.Select(i => new
+                {
+                    id          = i.Id,
+                    productName = i.ProductName,
+                    brandName   = i.BrandName,
+                    quantity    = i.Quantity,
+                    unitPrice   = i.UnitPrice,
+                    lineTotal   = i.LineTotal
+                })
+            });
+        }
+        // ──────────────────────────────────────────────────────────────────
 
         private CouponInfo LookupCoupon(string slug)
         {
