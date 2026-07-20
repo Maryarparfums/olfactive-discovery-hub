@@ -55,6 +55,12 @@ namespace Maryar.Api.Controllers
             _users    = users;
         }
 
+        // ✅ CORRIGIDO: quando logado E com cookie, evita mesclar os dois carrinhos,
+        // pois a mesclagem falha com "Duplicate entry" em ux_cart_product quando o
+        // mesmo produto existe nos dois carrinhos.
+        // Estratégia: se o carrinho do cookie tem itens, usa-o diretamente (é onde
+        // o cliente adicionou os produtos). Só usa o carrinho do userId se o cookie
+        // estiver vazio ou ausente.
         private Guid? ResolveCartId()
         {
             var userId = JwtAuthAttribute.CurrentUserId();
@@ -65,7 +71,26 @@ namespace Maryar.Api.Controllers
                 var c = ctx.Request.Cookies[CookieName];
                 token = c?.Value;
             }
+
             if (!userId.HasValue && string.IsNullOrEmpty(token)) return null;
+
+            // Usuário logado com cookie de carrinho: verifica qual tem itens
+            if (userId.HasValue && !string.IsNullOrEmpty(token))
+            {
+                // Tenta o carrinho do cookie primeiro (onde os itens foram adicionados)
+                var cookieCart = _carts.GetOrCreate(null, token);
+                if (cookieCart != null)
+                {
+                    var cookieItems = _carts.GetItems(cookieCart.Id);
+                    if (cookieItems != null && cookieItems.Any())
+                        return cookieCart.Id;
+                }
+
+                // Cookie vazio ou inexistente: usa carrinho do userId
+                return _carts.GetOrCreate(userId, null).Id;
+            }
+
+            // Visitante (sem userId) ou logado sem cookie: fluxo normal
             return _carts.GetOrCreate(userId, token).Id;
         }
 
@@ -162,9 +187,6 @@ namespace Maryar.Api.Controllers
         [HttpPost, Route("")]
         public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
         {
-            // ✅ O método INTEIRO está dentro do try/catch.
-            // Antes, ResolveCartId, GetItems, PricingService.Calculate e LookupCoupon
-            // ficavam fora e causavam 500 sem mensagem de erro para usuários logados.
             try
             {
                 TryAuthenticateRequest();
@@ -205,7 +227,6 @@ namespace Maryar.Api.Controllers
                     salesCommission   = pricing.Subtotal * (coupon.Commission / 100m);
                 }
 
-                // Frete grátis quando o cupom tem shipping_fee_coupon = 1
                 pricing.ShippingFee = (coupon != null && coupon.ShippingFeeCoupon)
                     ? 0m
                     : req.ShippingOption.Price;
@@ -314,7 +335,6 @@ namespace Maryar.Api.Controllers
             }
             catch (Exception ex)
             {
-                // Retorna o erro completo com InnerException para facilitar diagnóstico
                 var inner = ex.InnerException != null ? " | Inner: " + ex.InnerException.Message : "";
                 return Content(HttpStatusCode.InternalServerError,
                     new { error = "Erro ao processar pedido: " + ex.Message + inner, tipo = ex.GetType().Name });
@@ -379,7 +399,6 @@ namespace Maryar.Api.Controllers
             }
             catch (Exception ex)
             {
-                // Relança com contexto, será capturado pelo try/catch do Process
                 throw new InvalidOperationException("Erro ao consultar cupom: " + ex.Message, ex);
             }
         }
