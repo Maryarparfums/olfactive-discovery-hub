@@ -32,10 +32,11 @@ namespace Maryar.Api.Controllers
 
         private class CouponInfo
         {
-            public string  Slug       { get; set; }
-            public decimal Percent    { get; set; }
-            public Guid?   DealerId   { get; set; }
-            public decimal Commission { get; set; }
+            public string  Slug              { get; set; }
+            public decimal Percent           { get; set; }
+            public Guid?   DealerId          { get; set; }
+            public decimal Commission        { get; set; }
+            public bool    ShippingFeeCoupon { get; set; }
         }
 
         public CheckoutController()
@@ -122,7 +123,6 @@ namespace Maryar.Api.Controllers
             if (order == null)
                 return NotFound();
 
-            // Garante que o pedido pertence ao usuário logado
             if (order.UserId != userId.Value)
                 return Content(HttpStatusCode.Forbidden, new { error = "Acesso negado." });
 
@@ -157,47 +157,8 @@ namespace Maryar.Api.Controllers
                 })
             });
         }
-        // ──────────────────────────────────────────────────────────────────
 
-        private CouponInfo LookupCoupon(string slug)
-        {
-            if (string.IsNullOrWhiteSpace(slug)) return null;
-            try
-            {
-                using (var con = new MySqlConnection(_conn))
-                {
-                    con.Open();
-                    using (var cmd = new MySqlCommand(
-                        "SELECT slug, percent, user_id, commission " +
-                        "FROM coupons WHERE UPPER(slug) = UPPER(@slug) LIMIT 1", con))
-                    {
-                        cmd.Parameters.AddWithValue("@slug", slug.Trim());
-                        using (var rd = cmd.ExecuteReader())
-                        {
-                            if (!rd.Read()) return null;
-                            Guid? dealerId = null;
-                            if (!rd.IsDBNull(rd.GetOrdinal("user_id")))
-                            {
-                                var raw = rd.GetString(rd.GetOrdinal("user_id"));
-                                if (Guid.TryParse(raw, out var g)) dealerId = g;
-                            }
-                            return new CouponInfo
-                            {
-                                Slug       = rd.GetString(rd.GetOrdinal("slug")),
-                                Percent    = rd.GetDecimal(rd.GetOrdinal("percent")),
-                                DealerId   = dealerId,
-                                Commission = rd.GetDecimal(rd.GetOrdinal("commission"))
-                            };
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException("Erro ao consultar cupom: " + ex.Message, ex);
-            }
-        }
-
+        // ─── Finalizar compra ──────────────────────────────────────────────
         [HttpPost, Route("")]
         public async Task<IHttpActionResult> Process([FromBody] CheckoutRequest req)
         {
@@ -206,7 +167,8 @@ namespace Maryar.Api.Controllers
             if (req?.Customer == null || req.Shipping == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Dados incompletos." });
 
-            if (req.ShippingOption == null || req.ShippingOption.Price <= 0)
+            // Permite price=0 quando o cupom garante frete grátis
+            if (req.ShippingOption == null)
                 return Content(HttpStatusCode.BadRequest, new { error = "Selecione uma opcao de frete antes de continuar." });
 
             var method = (req.PaymentMethod ?? "pix").ToLower();
@@ -235,12 +197,16 @@ namespace Maryar.Api.Controllers
 
             if (coupon != null)
             {
-                pricing.Discount    += pricing.Subtotal * (coupon.Percent / 100m);
-                salesCommission      = pricing.Subtotal * (coupon.Commission / 100m);
+                pricing.Discount += pricing.Subtotal * (coupon.Percent / 100m);
+                salesCommission   = pricing.Subtotal * (coupon.Commission / 100m);
             }
 
-            pricing.ShippingFee = req.ShippingOption.Price;
-            pricing.Total       = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
+            // Frete grátis quando o cupom tem shipping_fee_coupon = 1
+            pricing.ShippingFee = (coupon != null && coupon.ShippingFeeCoupon)
+                ? 0m
+                : req.ShippingOption.Price;
+
+            pricing.Total = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
 
             var profileDto = new UserProfileDto
             {
@@ -351,6 +317,7 @@ namespace Maryar.Api.Controllers
             }
         }
 
+        // ─── Webhook Asaas ─────────────────────────────────────────────────
         [HttpPost, Route("webhook")]
         public IHttpActionResult Webhook([FromBody] AsaasWebhookPayload payload)
         {
@@ -368,6 +335,47 @@ namespace Maryar.Api.Controllers
             catch
             {
                 return InternalServerError();
+            }
+        }
+
+        // ─── Helpers ───────────────────────────────────────────────────────
+        private CouponInfo LookupCoupon(string slug)
+        {
+            if (string.IsNullOrWhiteSpace(slug)) return null;
+            try
+            {
+                using (var con = new MySqlConnection(_conn))
+                {
+                    con.Open();
+                    using (var cmd = new MySqlCommand(
+                        "SELECT slug, percent, user_id, commission, shipping_fee_coupon " +
+                        "FROM coupons WHERE UPPER(slug) = UPPER(@slug) LIMIT 1", con))
+                    {
+                        cmd.Parameters.AddWithValue("@slug", slug.Trim());
+                        using (var rd = cmd.ExecuteReader())
+                        {
+                            if (!rd.Read()) return null;
+                            Guid? dealerId = null;
+                            if (!rd.IsDBNull(rd.GetOrdinal("user_id")))
+                            {
+                                var raw = rd.GetString(rd.GetOrdinal("user_id"));
+                                if (Guid.TryParse(raw, out var g)) dealerId = g;
+                            }
+                            return new CouponInfo
+                            {
+                                Slug              = rd.GetString(rd.GetOrdinal("slug")),
+                                Percent           = rd.GetDecimal(rd.GetOrdinal("percent")),
+                                DealerId          = dealerId,
+                                Commission        = rd.GetDecimal(rd.GetOrdinal("commission")),
+                                ShippingFeeCoupon = rd.GetInt32(rd.GetOrdinal("shipping_fee_coupon")) == 1
+                            };
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Erro ao consultar cupom: " + ex.Message, ex);
             }
         }
     }
