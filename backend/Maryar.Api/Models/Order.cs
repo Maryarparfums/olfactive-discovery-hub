@@ -23,6 +23,7 @@ namespace Maryar.Api.Models
         public decimal Subtotal { get; set; }
         public decimal ShippingFee { get; set; }
         public decimal Discount { get; set; }
+        public decimal PaymentFee { get; set; }   // taxa ou desconto por modalidade de pagamento (negativo = desconto)
         public decimal Total { get; set; }
 
         public string Coupon { get; set; }
