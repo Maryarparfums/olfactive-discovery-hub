@@ -151,6 +151,7 @@
     <Compile Include="Controllers\FamiliesController.cs" />
     <Compile Include="Controllers\CartController.cs" />
     <Compile Include="Controllers\CheckoutController.cs" />
+    <Compile Include="Controllers\PaymentRatesController.cs" />
     <Compile Include="Controllers\PaymentsController.cs" />
     <Compile Include="Controllers\WebhooksController.cs" />
     <Compile Include="Controllers\AuthController.cs" />
