@@ -163,6 +163,7 @@ namespace Maryar.Api.Controllers
                     subtotal      = order.Subtotal,
                     shippingFee   = order.ShippingFee,
                     discount      = order.Discount,
+                    paymentFee    = order.PaymentFee,   // ← novo campo (taxa/desconto do meio de pagamento)
                     paymentStatus = order.PaymentStatus,
                     paymentMethod = order.PaymentMethod,
                     orderStatus   = order.OrderStatus,
@@ -218,6 +219,7 @@ namespace Maryar.Api.Controllers
                 if (pricing.Total <= 0)
                     return Content(HttpStatusCode.BadRequest, new { error = "Nao foi possivel calcular o total." });
 
+                // ── Cupom ──────────────────────────────────────────────────
                 var coupon          = LookupCoupon(req.CouponSlug);
                 var salesCommission = 0m;
 
@@ -231,8 +233,21 @@ namespace Maryar.Api.Controllers
                     ? 0m
                     : req.ShippingOption.Price;
 
+                // Total base (sem taxa de pagamento)
                 pricing.Total = pricing.Subtotal - pricing.Discount + pricing.ShippingFee;
 
+                // ── Taxa / desconto do meio de pagamento ───────────────────
+                // Busca na tabela payment_rates pelo método e número de parcelas.
+                // Negativo = desconto (ex: PIX -5%), positivo = juros (ex: 6x +4,49%).
+                var installments = method == "credit_card"
+                    ? (req.Installments < 1 ? 1 : req.Installments)
+                    : (int?)null;
+
+                var paymentRate = LookupPaymentRate(method, installments);
+                var paymentFee  = Math.Round(pricing.Total * paymentRate, 2);
+                pricing.Total  += paymentFee;   // desconto diminui, juros aumenta
+
+                // ── Perfil do usuário ──────────────────────────────────────
                 var profileDto = new UserProfileDto
                 {
                     Name        = req.Customer.Name,
@@ -260,6 +275,7 @@ namespace Maryar.Api.Controllers
                     userId = _users.UpsertByEmail(profileDto);
                 }
 
+                // ── Criar pedido ───────────────────────────────────────────
                 var orderId     = Guid.NewGuid();
                 var orderNumber = "MAR-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
 
@@ -282,7 +298,8 @@ namespace Maryar.Api.Controllers
                     Subtotal             = pricing.Subtotal,
                     ShippingFee          = pricing.ShippingFee,
                     Discount             = pricing.Discount,
-                    Total                = pricing.Total,
+                    PaymentFee           = paymentFee,   // ← taxa/desconto do pagamento
+                    Total                = pricing.Total, // ← já inclui taxa/desconto
                     Coupon               = coupon != null ? coupon.Slug : null,
                     DealerId             = coupon != null ? coupon.DealerId : (Guid?)null,
                     SalesCommission      = salesCommission,
@@ -294,10 +311,12 @@ namespace Maryar.Api.Controllers
                 foreach (var it in pricing.Items) it.OrderId = orderId;
                 _orders.Create(order, pricing.Items);
 
+                // ── Asaas ──────────────────────────────────────────────────
                 var customerId = await _asaas.GetOrCreateCustomerAsync(req.Customer);
 
                 if (method == "pix")
                 {
+                    // pricing.Total já tem o desconto PIX embutido
                     var pix = await _asaas.CreatePixAsync(customerId, pricing.Total, orderNumber);
                     _orders.UpdatePaymentInfo(orderId, pix.PaymentId, pix.QrCodeImage, pix.QrCodeText);
 
@@ -313,10 +332,10 @@ namespace Maryar.Api.Controllers
                 }
                 else
                 {
-                    var installments = req.Installments < 1 ? 1 : req.Installments;
+                    // pricing.Total já tem os juros do parcelamento embutidos
                     var card = await _asaas.CreateCreditCardAsync(
                         customerId, pricing.Total, orderNumber,
-                        installments, req.CreditCard, req.Customer, req.Shipping);
+                        installments.Value, req.CreditCard, req.Customer, req.Shipping);
 
                     _orders.UpdatePaymentInfo(orderId, card.PaymentId, null, null);
 
@@ -363,6 +382,48 @@ namespace Maryar.Api.Controllers
         }
 
         // ─── Helpers ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Busca a taxa de pagamento na tabela payment_rates.
+        /// Retorna 0 se não encontrar (sem taxa, sem desconto).
+        /// Valor negativo = desconto; positivo = juros.
+        /// </summary>
+        private decimal LookupPaymentRate(string paymentMethod, int? installments)
+        {
+            try
+            {
+                using (var con = new MySqlConnection(_conn))
+                {
+                    con.Open();
+
+                    // Para PIX: installments IS NULL
+                    // Para cartão: installments = N
+                    var sql = installments.HasValue
+                        ? "SELECT rate FROM payment_rates " +
+                          "WHERE payment_method = @method AND installments = @inst AND active = 1 LIMIT 1"
+                        : "SELECT rate FROM payment_rates " +
+                          "WHERE payment_method = @method AND installments IS NULL AND active = 1 LIMIT 1";
+
+                    using (var cmd = new MySqlCommand(sql, con))
+                    {
+                        cmd.Parameters.AddWithValue("@method", paymentMethod);
+                        if (installments.HasValue)
+                            cmd.Parameters.AddWithValue("@inst", installments.Value);
+
+                        var result = cmd.ExecuteScalar();
+                        if (result == null || result == DBNull.Value) return 0m;
+                        return Convert.ToDecimal(result);
+                    }
+                }
+            }
+            catch
+            {
+                // Falha silenciosa: se a tabela ainda não existir, o checkout não é bloqueado.
+                // Remova o try/catch após confirmar que a tabela foi criada no banco.
+                return 0m;
+            }
+        }
+
         private CouponInfo LookupCoupon(string slug)
         {
             if (string.IsNullOrWhiteSpace(slug)) return null;
