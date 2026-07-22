@@ -29,7 +29,7 @@ namespace Maryar.Api.Repositories.MySql
                                 customer_name, customer_email, customer_document, customer_phone,
                                 shipping_zip, shipping_street, shipping_number, shipping_complement,
                                 shipping_neighborhood, shipping_city, shipping_state,
-                                subtotal, shipping_fee, discount, total,
+                                subtotal, shipping_fee, discount, payment_fee, total,
                                 coupon, dealer_id, status_commission, sales_commission,
                                 payment_method, payment_status, order_status,
                                 text
@@ -37,7 +37,7 @@ namespace Maryar.Api.Repositories.MySql
                                 @id, @num, @uid,
                                 @cname, @cemail, @cdoc, @cphone,
                                 @zip, @street, @snum, @scomp, @sneigh, @scity, @sst,
-                                @subtotal, @shipfee, @disc, @total,
+                                @subtotal, @shipfee, @disc, @payfee, @total,
                                 @coupon, @dealerid, @scommst, @scomm,
                                 @pm, @ps, @os,
                                 ''
@@ -60,6 +60,7 @@ namespace Maryar.Api.Repositories.MySql
                         cmd.Parameters.AddWithValue("@subtotal", order.Subtotal);
                         cmd.Parameters.AddWithValue("@shipfee", order.ShippingFee);
                         cmd.Parameters.AddWithValue("@disc",    order.Discount);
+                        cmd.Parameters.AddWithValue("@payfee",  order.PaymentFee);
                         cmd.Parameters.AddWithValue("@total",   order.Total);
                         cmd.Parameters.AddWithValue("@coupon",  order.Coupon ?? "");
                         cmd.Parameters.AddWithValue("@dealerid",
@@ -173,6 +174,7 @@ namespace Maryar.Api.Repositories.MySql
                 Subtotal             = Convert.ToDecimal(r["subtotal"]),
                 ShippingFee          = Convert.ToDecimal(r["shipping_fee"]),
                 Discount             = Convert.ToDecimal(r["discount"]),
+                PaymentFee           = r["payment_fee"] == DBNull.Value ? 0m : Convert.ToDecimal(r["payment_fee"]),
                 Total                = Convert.ToDecimal(r["total"]),
                 Coupon               = r["coupon"] == DBNull.Value ? null : r["coupon"].ToString(),
                 DealerId             = r["dealer_id"] == DBNull.Value ? (Guid?)null : Guid.Parse(r["dealer_id"].ToString()),
