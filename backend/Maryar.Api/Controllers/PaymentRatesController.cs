@@ -6,13 +6,16 @@ using MySql.Data.MySqlClient;
 
 namespace Maryar.Api.Controllers
 {
-    // GET  /api/payment-rates          — lista todas as taxas ativas
-    // GET  /api/payment-rates/{id}     — retorna uma taxa pelo id
-    // POST /api/payment-rates          — cria uma nova taxa
-    // PATCH /api/payment-rates/{id}    — atualiza rate/label/active de uma taxa
+    // GET    /api/payment-rates        — lista todas as taxas ativas
+    // GET    /api/payment-rates/{id}   — retorna uma taxa pelo id
+    // POST   /api/payment-rates        — cria uma nova taxa
+    // PATCH  /api/payment-rates/{id}   — atualiza rate/label/active de uma taxa
     // DELETE /api/payment-rates/{id}   — remove uma taxa
+    //
+    // Nota: o RoutePrefix não inclui "api/" pois o app já está publicado
+    // como aplicação virtual em /api no IIS (maryar.com.br/api).
 
-    [RoutePrefix("api/payment-rates")]
+    [RoutePrefix("payment-rates")]
     public class PaymentRatesController : ApiController
     {
         private readonly IConnectionFactory _factory;
