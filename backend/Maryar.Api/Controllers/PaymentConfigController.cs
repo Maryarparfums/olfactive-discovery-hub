@@ -9,7 +9,7 @@ namespace MaryAr.Controllers
     /// GET /api/payment-config
     /// Retorna configurações de pagamento, incluindo o valor mínimo de parcela.
     /// </summary>
-    [RoutePrefix("api/payment-config")]
+    [RoutePrefix("payment-config")]
     public class PaymentConfigController : ApiController
     {
         private string ConnectionString =>
