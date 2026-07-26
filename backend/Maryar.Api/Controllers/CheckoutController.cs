@@ -311,6 +311,9 @@ namespace Maryar.Api.Controllers
                 foreach (var it in pricing.Items) it.OrderId = orderId;
                 _orders.Create(order, pricing.Items);
 
+                // ✅ CORRIGIDO: subtrai o estoque das variações vendidas
+                DeductStock(cartItems);
+
                 // ── Asaas ──────────────────────────────────────────────────
                 var customerId = await _asaas.GetOrCreateCustomerAsync(req.Customer);
 
@@ -382,6 +385,32 @@ namespace Maryar.Api.Controllers
         }
 
         // ─── Helpers ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Subtrai o estoque das variações vendidas em product_variants.
+        /// Só atua em itens que têm VariantId preenchido.
+        /// O AND stock_qty >= @qty evita que o campo fique negativo:
+        /// se o estoque já estiver zerado, o UPDATE simplesmente não afeta nenhuma linha.
+        /// </summary>
+        private void DeductStock(IEnumerable<CartItem> items)
+        {
+            using (var con = new MySqlConnection(_conn))
+            {
+                con.Open();
+                foreach (var item in items.Where(i => i.VariantId.HasValue))
+                {
+                    using (var cmd = new MySqlCommand(
+                        "UPDATE product_variants " +
+                        "SET stock_qty = stock_qty - @qty " +
+                        "WHERE id = @variantId AND stock_qty >= @qty", con))
+                    {
+                        cmd.Parameters.AddWithValue("@qty",       item.Quantity);
+                        cmd.Parameters.AddWithValue("@variantId", item.VariantId.Value.ToString());
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+        }
 
         /// <summary>
         /// Busca a taxa de pagamento na tabela payment_rates.
