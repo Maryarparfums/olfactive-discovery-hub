@@ -6,7 +6,7 @@ using Maryar.Api.Repositories.MySql;
 
 namespace Maryar.Api.Controllers
 {
-    [RoutePrefix("api/home-banners")]
+    [RoutePrefix("home-banners")]
     public class HomeBannersController : ApiController
     {
         private readonly IHomeBannerRepository _repo;
