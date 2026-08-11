@@ -114,11 +114,13 @@
     <Compile Include="Models\PaginaEstatica.cs" />
     <Compile Include="Models\FaqItem.cs" />
     <Compile Include="Models\Ocasiao.cs" />
+    <Compile Include="Models\HomeBanner.cs" />
     <Compile Include="Dtos\ProductDtos.cs" />
     <Compile Include="Dtos\CartDtos.cs" />
     <Compile Include="Dtos\CheckoutDtos.cs" />
     <Compile Include="Dtos\AuthDtos.cs" />
     <Compile Include="Dtos\PaymentDtos.cs" />
+    <Compile Include="Dtos\HomeBannerDto.cs" />
     <Compile Include="Repositories\Interfaces\IProductRepository.cs" />
     <Compile Include="Repositories\Interfaces\IBrandRepository.cs" />
     <Compile Include="Repositories\Interfaces\IFamilyRepository.cs" />
@@ -129,6 +131,7 @@
     <Compile Include="Repositories\Interfaces\IPasswordResetRepository.cs" />
     <Compile Include="Repositories\Interfaces\IPaginaRepository.cs" />
     <Compile Include="Repositories\Interfaces\IOcasiaoRepository.cs" />
+    <Compile Include="Repositories\Interfaces\IHomeBannerRepository.cs" />
     <Compile Include="Repositories\MySql\ProductRepository.cs" />
     <Compile Include="Repositories\MySql\BrandRepository.cs" />
     <Compile Include="Repositories\MySql\FamilyRepository.cs" />
@@ -139,6 +142,7 @@
     <Compile Include="Repositories\MySql\PasswordResetRepository.cs" />
     <Compile Include="Repositories\MySql\PaginaRepository.cs" />
     <Compile Include="Repositories\MySql\OcasiaoRepository.cs" />
+    <Compile Include="Repositories\MySql\HomeBannerRepository.cs" />
     <Compile Include="Services\PasswordHasher.cs" />
     <Compile Include="Services\JwtService.cs" />
     <Compile Include="Services\HmacValidator.cs" />
@@ -159,6 +163,7 @@
     <Compile Include="Controllers\UsersController.cs" />
     <Compile Include="Controllers\PaginasController.cs" />
     <Compile Include="Controllers\OcasioesController.cs" />
+    <Compile Include="Controllers\HomeBannersController.cs" />
     <Compile Include="Controllers\FavoritesController.cs" />
     <Compile Include="Controllers\SocialNetworksController.cs" />
     <Compile Include="Controllers\ShippingController.cs" />
