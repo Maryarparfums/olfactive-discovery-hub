@@ -39,6 +39,7 @@ namespace Maryar.Api.Controllers
                   Concentration = p.Concentration,
                   VolumeMl      = p.VolumeMl,
                   Price         = p.Price,
+                  OldPrice      = p.OldPrice,
                   ImageUrl      = p.ImageUrl,
                   StockQty      = p.StockQty
               };
@@ -58,7 +59,7 @@ namespace Maryar.Api.Controllers
                   item.Ocasiao      = Deserialize<Dictionary<string, int>>(d.OcasiaoJson);
               }
 
-              // ► NOVO: variantes de volume/preço
+              // Variantes de volume/preço, incluindo OldPrice do repositório.
               item.Variants = _repo.GetVariantsByProductId(p.Id).ToList();
 
               return item;
@@ -89,10 +90,11 @@ namespace Maryar.Api.Controllers
               Slug           = p.Slug,
               Name           = p.Name,
               Brand          = p.BrandName,
-              Family         = p.FamilyName,
+              Family          = p.FamilyName,
               Concentration  = p.Concentration,
               VolumeMl       = p.VolumeMl,
               Price          = p.Price,
+              OldPrice       = p.OldPrice,
               StockQty       = p.StockQty,
               Description    = p.Description,
               ImageUrl       = p.ImageUrl,
@@ -114,9 +116,9 @@ namespace Maryar.Api.Controllers
                   dto.Fixacao      = d.Fixacao;
                   dto.Projecao     = d.Projecao;
                   dto.DuracaoHoras = d.DuracaoHoras;
-                  dto.Genero       = d.Genero;
-                  dto.Inspiracao   = d.Inspiracao;
-                  dto.Status       = d.Status;
+                  dto.Genero        = d.Genero;
+                  dto.Inspiracao    = d.Inspiracao;
+                  dto.Status        = d.Status;
               }
           }
           catch (System.Exception ex)
@@ -124,7 +126,7 @@ namespace Maryar.Api.Controllers
               dto.Description += "\n\nERRO: " + ex.ToString();
           }
 
-          // ► NOVO: variantes de volume/preço
+          // Variantes de volume/preço, incluindo OldPrice do repositório.
           dto.Variants = _repo.GetVariantsByProductId(p.Id).ToList();
 
           return Ok(dto);
