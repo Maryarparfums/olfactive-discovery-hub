@@ -14,6 +14,7 @@ namespace Maryar.Api.Models
         public string Concentration { get; set; }
         public int VolumeMl { get; set; }
         public decimal Price { get; set; }
+        public decimal OldPrice { get; set; }
         public int StockQty { get; set; }
         public string Description { get; set; }
         public string ImageUrl { get; set; }
