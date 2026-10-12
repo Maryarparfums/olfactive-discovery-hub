@@ -9,7 +9,7 @@ namespace Maryar.Api.Dtos
       public string  Id       { get; set; }
       public int     VolumeMl { get; set; }
       public decimal Price    { get; set; }
-      public decimal? OldPrice { get; set; }
+      public decimal OldPrice { get; set; }
       public string  ImageUrl { get; set; }   // ← NOVO: foto da apresentação
       public int     StockQty { get; set; }
   }
@@ -24,7 +24,7 @@ namespace Maryar.Api.Dtos
       public string  Concentration { get; set; }
       public int     VolumeMl      { get; set; }
       public decimal Price         { get; set; }
-      public decimal? OldPrice     { get; set; }
+      public decimal OldPrice     { get; set; }
       public string  ImageUrl      { get; set; }
       public int     StockQty      { get; set; }
       public string  Genero        { get; set; }
