@@ -25,16 +25,17 @@ namespace Maryar.Api.Repositories.MySql
               Slug           = r["slug"].ToString(),
               Name           = r["name"].ToString(),
               BrandId        = Guid.Parse(r["brand_id"].ToString()),
-              BrandName      = r["brand_name"]      == DBNull.Value ? null : r["brand_name"].ToString(),
-              FamilyId       = r["family_id"]       == DBNull.Value ? (Guid?)null : Guid.Parse(r["family_id"].ToString()),
-              FamilyName     = r["family_name"]     == DBNull.Value ? null : r["family_name"].ToString(),
-              Concentration  = r["concentration"]   == DBNull.Value ? null : r["concentration"].ToString(),
+              BrandName      = r["brand_name"]       == DBNull.Value ? null : r["brand_name"].ToString(),
+              FamilyId       = r["family_id"]        == DBNull.Value ? (Guid?)null : Guid.Parse(r["family_id"].ToString()),
+              FamilyName     = r["family_name"]      == DBNull.Value ? null : r["family_name"].ToString(),
+              Concentration  = r["concentration"]    == DBNull.Value ? null : r["concentration"].ToString(),
               VolumeMl       = Convert.ToInt32(r["volume_ml"]),
               Price          = Convert.ToDecimal(r["price"]),
+              OldPrice       = Convert.ToDecimal(r["old_price"]),
               StockQty       = Convert.ToInt32(r["stock_qty"]),
-              Description    = r["description"]     == DBNull.Value ? null : r["description"].ToString(),
-              ImageUrl       = r["image_url"]       == DBNull.Value ? null : r["image_url"].ToString(),
-              DetailImageUrl = r["detail_image_url"]== DBNull.Value ? null : r["detail_image_url"].ToString(),
+              Description    = r["description"]      == DBNull.Value ? null : r["description"].ToString(),
+              ImageUrl       = r["image_url"]        == DBNull.Value ? null : r["image_url"].ToString(),
+              DetailImageUrl = r["detail_image_url"] == DBNull.Value ? null : r["detail_image_url"].ToString(),
               Active         = Convert.ToBoolean(r["active"]),
               CreatedAt      = Convert.ToDateTime(r["created_at"])
           };
@@ -100,13 +101,13 @@ namespace Maryar.Api.Repositories.MySql
                   cmd.CommandText =
                       "SELECT p.id, p.slug, p.name, p.brand_id, b.name AS brand_name, " +
                       "p.family_id, f.name AS family_name, p.concentration, p.volume_ml, " +
-                      "p.price, p.stock_qty, p.description, p.image_url, p.detail_image_url, " +
+                      "p.price, p.old_price, p.stock_qty, p.description, p.image_url, p.detail_image_url, " +
                       "p.active, p.created_at " + baseFrom + where +
                       " ORDER BY p.created_at DESC LIMIT @limit OFFSET @offset";
 
                   foreach (var p in parameters)
                       cmd.Parameters.Add(new MySqlParameter(p.ParameterName, p.Value));
-                  cmd.Parameters.AddWithValue("@limit",  size);
+                  cmd.Parameters.AddWithValue("@limit", size);
                   cmd.Parameters.AddWithValue("@offset", offset);
 
                   using (var r = cmd.ExecuteReader())
@@ -124,7 +125,7 @@ namespace Maryar.Api.Repositories.MySql
               cmd.CommandText =
                   "SELECT p.id, p.slug, p.name, p.brand_id, b.name AS brand_name, " +
                   "p.family_id, f.name AS family_name, p.concentration, p.volume_ml, " +
-                  "p.price, p.stock_qty, p.description, p.image_url, p.detail_image_url, " +
+                  "p.price, p.old_price, p.stock_qty, p.description, p.image_url, p.detail_image_url, " +
                   "p.active, p.created_at " +
                   "FROM products p " +
                   "INNER JOIN brands b           ON b.id = p.brand_id " +
@@ -136,7 +137,7 @@ namespace Maryar.Api.Repositories.MySql
           }
       }
 
-      public Product GetById(Guid id)   => GetSingle("p.id = @id",                       "@id",   id.ToString());
+      public Product GetById(Guid id)   => GetSingle("p.id = @id",                       "@id", id.ToString());
       public Product GetBySlug(string slug) => GetSingle("p.slug = @slug AND p.active = 1", "@slug", slug);
 
       public PerfumeDetails GetDetailsByProductId(Guid productId)
@@ -176,8 +177,8 @@ namespace Maryar.Api.Repositories.MySql
                       EstacaoJson      = r["estacao"]       == DBNull.Value ? "{}" : r["estacao"].ToString(),
                       PeriodoJson      = r["periodo"]       == DBNull.Value ? "{}" : r["periodo"].ToString(),
                       OcasiaoJson      = r["ocasiao"]       == DBNull.Value ? "{}" : r["ocasiao"].ToString(),
-                      Fixacao          = r["fixacao"]       == DBNull.Value ? 0    : Convert.ToInt32(r["fixacao"]),
-                      Projecao         = r["projecao"]      == DBNull.Value ? 0    : Convert.ToInt32(r["projecao"]),
+                      Fixacao          = r["fixacao"]       == DBNull.Value ? 0 : Convert.ToInt32(r["fixacao"]),
+                      Projecao         = r["projecao"]      == DBNull.Value ? 0 : Convert.ToInt32(r["projecao"]),
                       DuracaoHoras     = r["duracao_horas"] == DBNull.Value ? null : r["duracao_horas"].ToString(),
                       SimilaresJson    = r["similares"]     == DBNull.Value ? "[]" : r["similares"].ToString(),
                       Genero           = r["genero"]        == DBNull.Value ? null : r["genero"].ToString(),
@@ -188,7 +189,7 @@ namespace Maryar.Api.Repositories.MySql
           }
       }
 
-      // ── NOVO: busca as variantes de volume/preço de um produto ──────────
+      // Busca as variantes de volume/preço, incluindo OldPrice.
       public IEnumerable<ProductVariantDto> GetVariantsByProductId(Guid productId)
       {
           var list = new List<ProductVariantDto>();
@@ -197,7 +198,7 @@ namespace Maryar.Api.Repositories.MySql
           using (var cmd = cn.CreateCommand())
           {
               cmd.CommandText = @"
-                  SELECT id, volume_ml, price, image_url, stock_qty
+                  SELECT id, volume_ml, price, old_price, image_url, stock_qty
                   FROM   product_variants
                   WHERE  product_id = @id
                     AND  active = 1
@@ -214,6 +215,7 @@ namespace Maryar.Api.Repositories.MySql
                           Id       = r["id"].ToString(),
                           VolumeMl = Convert.ToInt32(r["volume_ml"]),
                           Price    = Convert.ToDecimal(r["price"]),
+                          OldPrice = Convert.ToDecimal(r["old_price"]),
                           ImageUrl = r["image_url"] == DBNull.Value ? null : r["image_url"].ToString(),
                           StockQty = Convert.ToInt32(r["stock_qty"])
                       });
